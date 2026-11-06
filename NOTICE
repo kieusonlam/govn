@@ -1,0 +1,6 @@
+govn is licensed under the GNU General Public License, version 3 or later (see LICENSE).
+
+engine/ is a Rust port of ukengine from the UniKey project:
+  Copyright (C) 2000-2005 Pham Kim Long <unikey@gmail.com>, http://unikey.org
+  ukengine is licensed under the GNU Lesser General Public License, version 2 or later.
+  Source used for the port: https://github.com/vn-input/ibus-unikey (directory ukengine/)

@@ -1,0 +1,8 @@
+[package]
+name = "govn-engine"
+description = "Vietnamese input engine, a Rust port of UniKey's ukengine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]

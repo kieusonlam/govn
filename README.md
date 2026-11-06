@@ -8,6 +8,10 @@ govn chỉ xuất Unicode, nên không có và cũng không định thêm macro 
 
 Chưa có: cấu hình theo ứng dụng, cửa sổ cài đặt, trình cài đặt.
 
+## Vì sao viết bằng Rust
+
+Bộ gõ xử lý mọi phím bạn gõ, nên một lỗi bộ nhớ ở đây rất tai hại. Rust loại bỏ loại lỗi này ở phần xử lý tiếng Việt (phần gọi Windows vẫn cần `unsafe`). Engine cho kết quả giống bản C++ gốc trên khoảng 5,9 triệu phím ASCII, và không crash ở những chuỗi phím đã làm bản gốc crash. Chương trình là một file `.exe` khoảng 340 KB, không cần cài runtime.
+
 ## Chạy
 
 Nếu đang dùng bộ gõ khác, chuyển nó sang chế độ E trước để tránh gõ bị đôi.

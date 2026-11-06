@@ -10,7 +10,10 @@ Chưa có: cấu hình theo ứng dụng, cửa sổ cài đặt, trình cài đ
 
 ## Vì sao viết bằng Rust
 
-Bộ gõ xử lý mọi phím bạn gõ, nên một lỗi bộ nhớ ở đây rất tai hại. Rust loại bỏ loại lỗi này ở phần xử lý tiếng Việt (phần gọi Windows vẫn cần `unsafe`). Engine cho kết quả giống bản C++ gốc trên khoảng 5,9 triệu phím ASCII, và không crash ở những chuỗi phím đã làm bản gốc crash. Chương trình là một file `.exe` khoảng 340 KB, không cần cài runtime.
+- **An toàn hơn:** bộ gõ thấy mọi phím bạn gõ, kể cả mật khẩu. Rust tránh được lỗi bộ nhớ, loại lỗi hay gây crash và lỗ hổng bảo mật. Phần giao tiếp với Windows thì Rust chỉ bảo vệ được một phần.
+- **Gõ đúng như bản gốc:** đã so với phần xử lý tiếng Việt của UniKey trên khoảng 5,9 triệu phím thường (không dấu), kết quả giống hệt.
+- **Không crash ở những chỗ bản gốc crash:** khi thử, một số chuỗi phím làm bản C++ gốc crash, còn govn thì không.
+- **Gọn nhẹ:** chỉ một file `.exe` khoảng 340 KB, không cần cài thêm gì.
 
 ## Chạy
 

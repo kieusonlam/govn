@@ -2,7 +2,11 @@
 
 Bộ gõ tiếng Việt cho Windows viết bằng Rust. Engine được port từ `ukengine` của UniKey (xem `NOTICE`).
 
-Chưa có: macro, chuyển mã clipboard, cấu hình theo ứng dụng, cửa sổ cài đặt, trình cài đặt.
+![Icon V và E ở khay hệ thống, cùng menu nhấp phải của govn](docs/screenshot.png)
+
+govn chỉ xuất Unicode, nên không có và cũng không định thêm macro hay chuyển mã clipboard.
+
+Chưa có: cấu hình theo ứng dụng, cửa sổ cài đặt, trình cài đặt.
 
 ## Chạy
 

@@ -22,6 +22,7 @@ use tray_ids::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 const TEST_RUN_KEY: &str = "Software\\govn-e2e-test\\Run";
+const TEST_TASK: &str = "govn-e2e-test";
 
 unsafe extern "system" fn wnd_proc(h: HWND, m: u32, w: WPARAM, l: LPARAM) -> LRESULT {
     DefWindowProcW(h, m, w, l)
@@ -235,16 +236,28 @@ fn autostart_value() -> Option<String> {
 struct Tally {
     failed: u32,
     total: u32,
+    /// Elevated runs have no console the caller can read.
+    log: Option<std::path::PathBuf>,
 }
 
 impl Tally {
+    fn say(&self, line: &str) {
+        println!("{line}");
+        if let Some(path) = &self.log {
+            use std::io::Write;
+            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+                let _ = writeln!(f, "{line}");
+            }
+        }
+    }
+
     fn ok(&mut self, name: &str, passed: bool) {
         self.total += 1;
         if passed {
-            println!("ok    {name}");
+            self.say(&format!("ok    {name}"));
         } else {
             self.failed += 1;
-            println!("FAIL  {name}");
+            self.say(&format!("FAIL  {name}"));
         }
     }
 
@@ -270,18 +283,92 @@ impl Tally {
         let got = ui.text();
         self.total += 1;
         if got == want {
-            println!("ok    {name}: {got:?}");
+            self.say(&format!("ok    {name}: {got:?}"));
         } else {
             self.failed += 1;
-            println!("FAIL  {name}: keys {keys:?}\n      want {want:?}\n      got  {got:?}");
+            self.say(&format!("FAIL  {name}: keys {keys:?}\n      want {want:?}\n      got  {got:?}"));
         }
         // leave a word boundary so tests do not leak into each other
         ui.type_keys(" ");
     }
 }
 
+/// Runs elevated, in step with tools/test_admin.py running with normal rights: each side creates a
+/// file in `dir` when its part is done and waits for the other side's file.
+fn admin_test(exe: &str, dir: &std::path::Path) -> i32 {
+    let mut t = Tally { log: Some(dir.join("results.txt")), ..Tally::default() };
+    let signal = |name: &str| std::fs::write(dir.join(name), "").expect("signal");
+    let wait = |name: &str| {
+        for _ in 0..3000 {
+            if dir.join(name).exists() {
+                return;
+            }
+            pump(50);
+        }
+        panic!("hết giờ chờ {name}");
+    };
+    let ui = Ui::new();
+    if !ui.focus() {
+        t.ok("lấy được focus", false);
+        signal("abort");
+        return 3;
+    }
+    let pid = unsafe { GetCurrentProcessId() }.to_string();
+    std::fs::write(dir.join("pid_value"), &pid).expect("pid");
+    signal("pid");
+
+    wait("normal_started");
+    ui.focus();
+    t.check(&ui, "cửa sổ admin + govn quyền thường: không gõ được (đúng như dự đoán)", "tieengs", "tieengs");
+    signal("normal_checked");
+
+    wait("normal_stopped");
+    let cfg = dir.join("elevated.ini");
+    let mut kb = Command::new(exe)
+        .args(["--only-pid", &pid, "--accept-injected", "--duration-secs", "60", "--task-name", TEST_TASK, "--autostart-key", TEST_RUN_KEY, "--config"])
+        .arg(&cfg)
+        .spawn()
+        .expect("govn");
+    pump(600);
+    ui.focus();
+    t.check(&ui, "cửa sổ admin + govn quyền admin: gõ được", "tieengs vieetj", "tiếng việt");
+    signal("elevated_running");
+
+    wait("second_checked");
+    ui.focus();
+    t.check(&ui, "bản thường không chạy chồng, không gõ đôi", "tieengs", "tiếng");
+    signal("second_verified");
+
+    wait("tray_clicked");
+    ui.focus();
+    t.check(&ui, "bản admin vẫn nhận nhấp icon từ shell quyền thường", "as", "as");
+    command(CMD_QUIT);
+    t.ok("bản admin thoát bằng menu", wait_exit(&mut kb));
+    let _ = std::fs::remove_file(&cfg);
+
+    let task_args = "--only-pid 0 --duration-secs 6";
+    let status = Command::new(exe).args(["--set-admin-task", "on", "--task-name", TEST_TASK, "--task-args", task_args]).status();
+    t.ok("tạo được task", status.is_ok_and(|s| s.success()));
+    signal("task_created");
+
+    wait("delete_first");
+    let status = Command::new("schtasks").args(["/delete", "/tn", TEST_TASK, "/f"]).status();
+    t.ok("xóa được task", status.is_ok_and(|s| s.success()));
+    signal("first_deleted");
+
+    wait("delete_task");
+    let _ = Command::new("reg").args(["delete", "HKCU\\Software\\govn-e2e-test", "/f"]).output();
+    signal("task_deleted");
+    unsafe { DestroyWindow(ui.top) };
+    i32::from(t.failed != 0)
+}
+
 fn main() {
-    let exe = std::env::args().nth(1).expect("usage: e2e <govn.exe>");
+    let exe = std::env::args().nth(1).expect("usage: e2e <govn.exe> [--admin <dir>]");
+    if std::env::args().nth(2).as_deref() == Some("--admin") {
+        let dir = std::path::PathBuf::from(std::env::args().nth(3).expect("dir"));
+        std::process::exit(admin_test(&exe, &dir));
+    }
     let ui = Ui::new();
     if !ui.focus() {
         eprintln!("KHÔNG LẤY ĐƯỢC FOCUS: chưa gõ phím nào, test không chạy.");

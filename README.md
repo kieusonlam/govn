@@ -12,7 +12,7 @@ Chạy `govn.exe`: không có cửa sổ, chỉ có icon ở khay hệ thống. 
 
 - Icon **V** đỏ: tiếng Việt. Icon **E** xám: English.
 - Nhấp trái icon hoặc nhấn Ctrl+Shift: bật/tắt.
-- Nhấp phải icon: kiểu gõ, bỏ dấu kiểu mới, kiểm tra chính tả, tự khôi phục, sửa lỗi gợi ý, khởi động cùng Windows, thoát.
+- Nhấp phải icon: kiểu gõ, bỏ dấu kiểu mới, kiểm tra chính tả, tự khôi phục, sửa lỗi gợi ý, khởi động cùng Windows, chạy với quyền admin, thoát.
 - Ctrl+Alt+Shift+Q: thoát.
 
 Cài đặt lưu ở `%APPDATA%\govn\settings.ini`. "Khởi động cùng Windows" ghi giá trị `govn` vào `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, không cần quyền admin.
@@ -23,9 +23,18 @@ Tham số dòng lệnh ghi đè cài đặt đã lưu:
 govn [--method telex|vni|simple|simple2] [--modern] [--no-spell-check] [--auto-restore] [--off] [--suggestion-fix auto|always|never] [--config <file>]
 ```
 
+### Ứng dụng chạy quyền admin
+
+Windows không cho chương trình quyền thường nhận hay gửi phím cho cửa sổ quyền admin, nên ở đó govn quyền thường gõ ra chữ không dấu. Có hai cách:
+
+- Chuột phải `govn.exe` → Run as administrator, dùng cho một lần.
+- Menu → "Chạy với quyền admin": hỏi UAC một lần, tạo scheduled task `govn` chạy quyền cao nhất khi đăng nhập và thay cho mục khởi động cùng Windows. Mở `govn.exe` bằng tay lúc này cũng tự chuyển sang task.
+
+Chỉ bật khi `govn.exe` nằm ở thư mục chỉ admin sửa được, như `C:\Program Files\govn\`. Nếu không, phần mềm khác có thể thay file này để lên quyền admin mà không qua UAC.
+
 ### Windows Defender
 
-Bộ gõ nào cũng phải dùng hook bàn phím và tự gõ lại phím, giống hành vi của phần mềm độc hại. Bản build chưa có thông tin phiên bản từng bị Defender xóa với nhãn `Trojan:Win32/Bearfoos.A!ml` (phát hiện bằng học máy). Sau khi thêm thông tin phiên bản, `govn.exe` trên máy phát triển chưa bị đánh dấu, nhưng kết quả này có thể đổi theo từng bản build và từng máy. Muốn phát hành thì cần ký số và gửi file cho Microsoft xem xét báo nhầm.
+Bộ gõ nào cũng phải dùng hook bàn phím và tự gõ lại phím, giống hành vi của phần mềm độc hại, và file chưa được ký số. Defender từng xóa bản build trong thư mục tạm với nhãn `Trojan:Win32/Bearfoos.A!ml`, và chặn việc tạo task quyền admin trỏ tới file trong thư mục tạm với nhãn `Behavior:Win32/Execution.A!ml`. Cùng thao tác đó với file trong `Program Files` thì không bị báo trên máy phát triển, nhưng kết quả có thể đổi theo từng bản build và từng máy. Muốn phát hành thì cần ký số và gửi file cho Microsoft xem xét báo nhầm.
 
 ### Gợi ý tự động
 
@@ -51,5 +60,7 @@ Nếu thư mục dự án nằm ở đường dẫn quá dài, linker báo `LNK1
 - `tools/test_chrome.py`: thử trên Chrome thật (hồ sơ tạm, trang local): thanh địa chỉ có gợi ý, `textarea`, `input`, `contenteditable`.
 - `tools/test_vscode.py`: thử trên VS Code thật (hồ sơ tạm, không extension), có đối chứng popup gợi ý.
 - `tools/test_excel.ps1`: thử trên Excel thật, trong workbook trắng không lưu.
+- `tools/test_admin.py`: gõ vào cửa sổ quyền admin thật, với govn quyền thường và quyền admin. Cần bấm UAC.
+- `tools/test_admin_menu.py`: bật chế độ admin từ menu với file trong `Program Files`, xong tự dọn. Cần bấm UAC hai lần.
 
 `engine/src/tables.rs` được sinh tự động bằng `tools/gen_tables.py`, không sửa tay.

@@ -8,6 +8,8 @@ const WM_APP: u32 = 0x8000;
 pub const WM_TRAY: u32 = WM_APP + 1;
 /// Posted by the keyboard hook after Ctrl+Shift, to refresh the icon outside the hook.
 pub const WM_STATE_CHANGED: u32 = WM_APP + 2;
+/// Posted when the worker changing the admin task ends: `wparam` is the result, `lparam` the new state.
+pub const WM_ADMIN_DONE: u32 = WM_APP + 3;
 
 pub const CMD_TOGGLE: usize = 1001;
 pub const CMD_TELEX: usize = 1010;
@@ -21,4 +23,5 @@ pub const CMD_FIX_AUTO: usize = 1030;
 pub const CMD_FIX_ALWAYS: usize = 1031;
 pub const CMD_FIX_NEVER: usize = 1032;
 pub const CMD_AUTOSTART: usize = 1040;
+pub const CMD_ADMIN: usize = 1041;
 pub const CMD_QUIT: usize = 1099;

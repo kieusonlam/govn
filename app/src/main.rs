@@ -5,6 +5,7 @@
 //! All hook callbacks run on the main thread, inside its message loop.
 #![windows_subsystem = "windows"]
 
+mod admin;
 mod config;
 mod tray;
 mod tray_ids;
@@ -15,7 +16,7 @@ use std::cell::RefCell;
 use std::path::PathBuf;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::ptr::{null, null_mut};
-use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, HWND, LPARAM, LRESULT, WPARAM};
+use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ACCESS_DENIED, ERROR_ALREADY_EXISTS, HWND, LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::HiDpi::{SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_SYSTEM_AWARE};
 use windows_sys::Win32::System::Threading::{
@@ -67,6 +68,10 @@ struct State {
     config_path: Option<PathBuf>,
     autostart_key: String,
     own_pid: u32,
+    task_name: String,
+    /// Arguments of the scheduled task; only automated tests set them.
+    task_args: String,
+    elevated: bool,
 }
 
 fn current_settings(st: &State) -> Settings {
@@ -321,6 +326,9 @@ struct Args {
     suggestion_fix: Option<SuggestionFix>,
     config: Option<PathBuf>,
     autostart_key: Option<String>,
+    set_admin_task: Option<bool>,
+    task_name: Option<String>,
+    task_args: Option<String>,
     only_pid: Option<u32>,
     accept_injected: bool,
     duration_secs: Option<u32>,
@@ -346,6 +354,10 @@ fn parse_args() -> Result<Args, String> {
             "--config" => a.config = it.next().map(PathBuf::from),
             // for automated tests
             "--autostart-key" => a.autostart_key = it.next(),
+            "--task-name" => a.task_name = it.next(),
+            "--task-args" => a.task_args = it.next(),
+            // what the UAC prompt runs, see admin::set_task_elevated
+            "--set-admin-task" => a.set_admin_task = it.next().map(|v| v == "on"),
             "--only-pid" => a.only_pid = it.next().and_then(|v| v.parse().ok()),
             "--accept-injected" => a.accept_injected = true,
             "--duration-secs" => a.duration_secs = it.next().and_then(|v| v.parse().ok()),
@@ -363,6 +375,12 @@ fn main() {
             std::process::exit(2);
         }
     };
+    let task_name = args.task_name.clone().unwrap_or_else(|| admin::DEFAULT_TASK.to_string());
+    let task_args = args.task_args.clone().unwrap_or_default();
+    if let Some(on) = args.set_admin_task {
+        std::process::exit(if admin::set_task(&task_name, on, &task_args) { 0 } else { 1 });
+    }
+
     // Automated tests (--only-pid) stay out of the notification area and the user's settings,
     // unless they ask for a config file of their own.
     let testing = args.only_pid.is_some();
@@ -382,12 +400,24 @@ fn main() {
         SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_SYSTEM_AWARE);
 
         // Two instances would convert every key twice.
-        let _mutex = CreateMutexW(null(), 0, wide("Local\\govn-keyboard").as_ptr());
-        if GetLastError() == ERROR_ALREADY_EXISTS {
+        let mutex_name = wide("Local\\govn-keyboard");
+        let mut mutex = CreateMutexW(null(), 0, mutex_name.as_ptr());
+        // Access denied: the instance holding it runs elevated, and this one does not.
+        if matches!(GetLastError(), ERROR_ALREADY_EXISTS | ERROR_ACCESS_DENIED) {
             if !testing {
                 tray::message_box("govn đang chạy rồi. Xem biểu tượng V/E ở khay hệ thống.");
             }
             std::process::exit(1);
+        }
+
+        let elevated = admin::is_elevated();
+        // Opened by hand or from an old shortcut while admin mode is on: hand over to the elevated task.
+        if !testing && !elevated && admin::task_points_here(&task_name) {
+            CloseHandle(mutex);
+            if admin::run_task(&task_name) {
+                std::process::exit(0);
+            }
+            mutex = CreateMutexW(null(), 0, mutex_name.as_ptr());
         }
 
         let mut engine = Engine::new();
@@ -413,6 +443,9 @@ fn main() {
                 config_path,
                 autostart_key: autostart_key.clone(),
                 own_pid: GetCurrentProcessId(),
+                task_name: task_name.clone(),
+                task_args,
+                elevated,
             })
         });
 
@@ -424,6 +457,7 @@ fn main() {
         });
         if show_icon {
             tray::autostart_sync(&autostart_key);
+            tray::set_admin_enabled(admin::task_exists(&task_name));
         }
         if !testing && !FindWindowW(wide("EVKey_MainWnd").as_ptr(), null()).is_null() {
             tray::show_warning("EVKey đang chạy. Hãy chuyển nó sang chế độ E để tránh gõ bị đôi.");
@@ -453,5 +487,10 @@ fn main() {
         UnhookWindowsHookEx(kb);
         UnhookWindowsHookEx(mouse);
         tray::remove_icon();
+        if tray::restart_requested() {
+            // The elevated instance refuses to start while this one holds the mutex.
+            CloseHandle(mutex);
+            admin::run_task(&task_name);
+        }
     }
 }

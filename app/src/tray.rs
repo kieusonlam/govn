@@ -2,6 +2,7 @@
 //!
 //! `STATE` is never kept borrowed across a Win32 call that can pump messages, because the keyboard
 //! hook runs on this same thread and borrows it too.
+use crate::admin;
 use crate::config::{Settings, SuggestionFix};
 use crate::tray_ids::*;
 use crate::{current_settings, wide, STATE};
@@ -26,9 +27,9 @@ use windows_sys::Win32::UI::Shell::{
     NOTIFYICONDATAW,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    AppendMenuW, CheckMenuRadioItem, CreateIconIndirect, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, GetCursorPos,
+    AppendMenuW, ChangeWindowMessageFilterEx, CheckMenuRadioItem, CreateIconIndirect, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, EnableMenuItem, GetCursorPos,
     GetSystemMetrics, MessageBoxW, PostMessageW, PostQuitMessage, RegisterClassW, RegisterWindowMessageW,
-    SetForegroundWindow, TrackPopupMenu, HICON, HMENU, ICONINFO, MB_ICONERROR, MB_OK, MF_BYCOMMAND, MF_CHECKED, MF_POPUP, MF_SEPARATOR,
+    SetForegroundWindow, TrackPopupMenu, HICON, HMENU, ICONINFO, MB_ICONERROR, MB_ICONWARNING, MB_OK, MB_YESNO, MF_BYCOMMAND, MF_CHECKED, MF_GRAYED, MSGFLT_ALLOW, IDYES, MF_POPUP, MF_SEPARATOR,
     MF_STRING, SM_CXSMICON, TPM_RETURNCMD, TPM_RIGHTBUTTON, WM_COMMAND, WM_LBUTTONUP, WM_NULL, WM_RBUTTONUP, WNDCLASSW,
     WS_POPUP,
 };
@@ -45,6 +46,8 @@ thread_local! {
     static ICON_E: Cell<HICON> = const { Cell::new(null_mut()) };
     static SHOW_ICON: Cell<bool> = const { Cell::new(false) };
     static TASKBAR_CREATED: Cell<u32> = const { Cell::new(0) };
+    static ADMIN_ENABLED: Cell<bool> = const { Cell::new(false) };
+    static RESTART_REQUESTED: Cell<bool> = const { Cell::new(false) };
 }
 
 pub fn message_box(text: &str) {
@@ -261,6 +264,70 @@ fn autostart_key() -> String {
     STATE.with_borrow(|s| s.as_ref().map(|st| st.autostart_key.clone()).unwrap_or_default())
 }
 
+pub fn set_admin_enabled(on: bool) {
+    ADMIN_ENABLED.set(on);
+}
+
+/// Admin mode was just turned on here: end this process and start the elevated task.
+pub fn restart_requested() -> bool {
+    RESTART_REQUESTED.get()
+}
+
+const ADMIN_WARNING: &str = "Bật để gõ được trong các ứng dụng chạy quyền admin.\n\n\
+govn sẽ tự chạy với quyền admin mỗi lần đăng nhập mà không hỏi lại. Vì vậy hãy để govn.exe trong thư mục \
+chỉ admin mới sửa được (ví dụ Program Files); nếu không, phần mềm khác có thể thay file này để chiếm quyền admin.\n\n\
+Bật không?";
+
+fn toggle_admin() {
+    let on = !ADMIN_ENABLED.get();
+    let Some((name, args, elevated, testing)) = STATE.with_borrow(|s| {
+        s.as_ref().map(|st| (st.task_name.clone(), st.task_args.clone(), st.elevated, st.only_pid.is_some()))
+    }) else {
+        return;
+    };
+    if on && !testing {
+        let answer = unsafe {
+            MessageBoxW(WINDOW.get(), wide(ADMIN_WARNING).as_ptr(), wide("govn").as_ptr(), MB_YESNO | MB_ICONWARNING)
+        };
+        if answer != IDYES {
+            return;
+        }
+    }
+    // On a worker: the keyboard hook runs on this thread and must not wait for the UAC prompt.
+    let window = WINDOW.get() as usize;
+    std::thread::spawn(move || {
+        let result = if elevated {
+            if admin::set_task(&name, on, &args) { admin::RESULT_OK } else { admin::RESULT_FAILED }
+        } else {
+            admin::set_task_elevated(&name, on, &args)
+        };
+        unsafe { PostMessageW(window as HWND, WM_ADMIN_DONE, result as WPARAM, LPARAM::from(on)) };
+    });
+}
+
+fn admin_changed(result: u32, on: bool) {
+    match result {
+        admin::RESULT_OK => {}
+        admin::RESULT_CANCELLED => return,
+        _ => {
+            message_box("Không đổi được chế độ quyền admin.");
+            return;
+        }
+    }
+    ADMIN_ENABLED.set(on);
+    // The task replaces the Run entry; turning it off must not lose "start with Windows".
+    autostart_set(&autostart_key(), !on);
+    let elevated = STATE.with_borrow(|s| s.as_ref().is_some_and(|st| st.elevated));
+    match (on, elevated) {
+        (true, false) => {
+            RESTART_REQUESTED.set(true);
+            unsafe { PostQuitMessage(0) };
+        }
+        (false, true) => show_warning("Đã tắt. Từ lần mở sau, govn chạy với quyền thường."),
+        _ => {}
+    }
+}
+
 fn save_settings() -> bool {
     let (settings, path) = STATE.with_borrow(|s| match s.as_ref() {
         Some(st) => (Some(current_settings(st)), st.config_path.clone()),
@@ -278,7 +345,14 @@ fn run_command(cmd: usize) {
             unsafe { PostQuitMessage(0) };
             return;
         }
+        CMD_ADMIN => {
+            toggle_admin();
+            return;
+        }
         CMD_AUTOSTART => {
+            if ADMIN_ENABLED.get() {
+                return; // the task already starts govn; the menu item is greyed out
+            }
             let key = autostart_key();
             let on = autostart_get(&key).is_none();
             if !autostart_set(&key, on) {
@@ -327,7 +401,8 @@ unsafe fn add_item(menu: HMENU, id: usize, text: &str, checked: bool) {
 
 unsafe fn show_menu() {
     let Some(s) = snapshot() else { return };
-    let autostart = autostart_get(&autostart_key()).is_some();
+    let admin_on = ADMIN_ENABLED.get();
+    let autostart = admin_on || autostart_get(&autostart_key()).is_some();
 
     let methods = CreatePopupMenu();
     for (id, m) in [
@@ -363,6 +438,10 @@ unsafe fn show_menu() {
     AppendMenuW(menu, MF_POPUP, fixes as usize, wide("Sửa lỗi gợi ý tự động").as_ptr());
     AppendMenuW(menu, MF_SEPARATOR, 0, null());
     add_item(menu, CMD_AUTOSTART, "Khởi động cùng Windows", autostart);
+    if admin_on {
+        EnableMenuItem(menu, CMD_AUTOSTART as u32, MF_BYCOMMAND | MF_GRAYED);
+    }
+    add_item(menu, CMD_ADMIN, "Chạy với quyền admin", admin_on);
     AppendMenuW(menu, MF_SEPARATOR, 0, null());
     add_item(menu, CMD_QUIT, "Thoát\tCtrl+Alt+Shift+Q", false);
 
@@ -391,6 +470,10 @@ fn dispatch(msg: u32, wparam: WPARAM, lparam: LPARAM) -> Option<LRESULT> {
         }
         WM_COMMAND => {
             run_command(wparam & 0xFFFF);
+            Some(0)
+        }
+        WM_ADMIN_DONE => {
+            admin_changed(wparam as u32, lparam != 0);
             Some(0)
         }
         WM_STATE_CHANGED => {
@@ -427,6 +510,9 @@ pub fn create(show_icon: bool) -> HWND {
         let window = CreateWindowExW(0, class.as_ptr(), class.as_ptr(), WS_POPUP, 0, 0, 0, 0, null_mut(), null_mut(), module, null());
         WINDOW.set(window);
         TASKBAR_CREATED.set(RegisterWindowMessageW(wide("TaskbarCreated").as_ptr()));
+        // When elevated, Windows would drop these messages because the shell runs with normal rights.
+        ChangeWindowMessageFilterEx(window, TASKBAR_CREATED.get(), MSGFLT_ALLOW, null_mut());
+        ChangeWindowMessageFilterEx(window, WM_TRAY, MSGFLT_ALLOW, null_mut());
         SHOW_ICON.set(show_icon);
         if show_icon {
             ICON_V.set(make_icon("V", COLOR_VIET));

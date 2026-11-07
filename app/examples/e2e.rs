@@ -194,7 +194,7 @@ fn start_keyboard(exe: &str, method: &str) -> Child {
 fn start_with_config(exe: &str, cfg: &std::path::Path) -> Child {
     let pid = unsafe { GetCurrentProcessId() }.to_string();
     let child = Command::new(exe)
-        .args(["--only-pid", &pid, "--accept-injected", "--duration-secs", "60", "--autostart-key", TEST_RUN_KEY, "--config"])
+        .args(["--only-pid", &pid, "--accept-injected", "--duration-secs", "60", "--task-name", TEST_TASK, "--autostart-key", TEST_RUN_KEY, "--config"])
         .arg(cfg)
         .spawn()
         .expect("không chạy được govn.exe");

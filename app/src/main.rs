@@ -9,6 +9,7 @@ mod admin;
 mod config;
 mod tray;
 mod tray_ids;
+mod update;
 
 use config::{Settings, SuggestionFix};
 use govn_engine::{Engine, InputMethod, Options};

@@ -5,6 +5,7 @@
 use crate::admin;
 use crate::config::{Settings, SuggestionFix};
 use crate::tray_ids::*;
+use crate::update::{self, Check};
 use crate::{current_settings, wide, STATE};
 use govn_engine::{InputMethod, Options};
 use std::cell::Cell;
@@ -30,7 +31,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, ChangeWindowMessageFilterEx, CheckMenuRadioItem, CreateIconIndirect, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, EnableMenuItem, GetCursorPos,
     GetSystemMetrics, MessageBoxW, PostMessageW, PostQuitMessage, RegisterClassW, RegisterWindowMessageW,
     SetForegroundWindow, TrackPopupMenu, HICON, HMENU, ICONINFO, MB_ICONERROR, MB_ICONWARNING, MB_OK, MB_YESNO, MF_BYCOMMAND, MF_CHECKED, MF_GRAYED, MSGFLT_ALLOW, IDYES, MF_POPUP, MF_SEPARATOR,
-    MF_STRING, SM_CXSMICON, TPM_RETURNCMD, TPM_RIGHTBUTTON, WM_COMMAND, WM_LBUTTONUP, WM_NULL, WM_RBUTTONUP, WNDCLASSW,
+    MB_ICONINFORMATION, MF_STRING, SM_CXSMICON, TPM_RETURNCMD, TPM_RIGHTBUTTON, WM_COMMAND, WM_LBUTTONUP, WM_NULL, WM_RBUTTONUP, WNDCLASSW,
     WS_POPUP,
 };
 
@@ -48,6 +49,7 @@ thread_local! {
     static TASKBAR_CREATED: Cell<u32> = const { Cell::new(0) };
     static ADMIN_ENABLED: Cell<bool> = const { Cell::new(false) };
     static RESTART_REQUESTED: Cell<bool> = const { Cell::new(false) };
+    static UPDATE_RUNNING: Cell<bool> = const { Cell::new(false) };
 }
 
 pub fn message_box(text: &str) {
@@ -328,6 +330,38 @@ fn admin_changed(result: u32, on: bool) {
     }
 }
 
+/// On a worker: the keyboard hook runs on this thread and must not wait for the network.
+fn check_update() {
+    if UPDATE_RUNNING.replace(true) {
+        return;
+    }
+    let window = WINDOW.get() as usize;
+    std::thread::spawn(move || {
+        let result = catch_unwind(update::check).unwrap_or(Check::Failed);
+        let result = Box::into_raw(Box::new(result));
+        if unsafe { PostMessageW(window as HWND, WM_UPDATE_DONE, 0, result as LPARAM) } == 0 {
+            drop(unsafe { Box::from_raw(result) });
+        }
+    });
+}
+
+fn update_checked(result: Check) {
+    UPDATE_RUNNING.set(false);
+    let current = update::CURRENT_VERSION;
+    let (text, style) = match &result {
+        Check::UpToDate => (format!("Bạn đang dùng bản mới nhất ({current})."), MB_OK | MB_ICONINFORMATION),
+        Check::Available(newest) => (
+            format!("Có bản mới {newest} (bạn đang dùng {current}).\n\nMở trang tải về?"),
+            MB_YESNO | MB_ICONINFORMATION,
+        ),
+        Check::Failed => ("Không kiểm tra được bản mới. Hãy kiểm tra kết nối mạng rồi thử lại.".to_string(), MB_OK | MB_ICONWARNING),
+    };
+    let answer = unsafe { MessageBoxW(WINDOW.get(), wide(&text).as_ptr(), wide("govn").as_ptr(), style) };
+    if answer == IDYES && !update::open_releases_page() {
+        message_box("Không mở được trang tải về.");
+    }
+}
+
 fn save_settings() -> bool {
     let (settings, path) = STATE.with_borrow(|s| match s.as_ref() {
         Some(st) => (Some(current_settings(st)), st.config_path.clone()),
@@ -347,6 +381,10 @@ fn run_command(cmd: usize) {
         }
         CMD_ADMIN => {
             toggle_admin();
+            return;
+        }
+        CMD_CHECK_UPDATE => {
+            check_update();
             return;
         }
         CMD_AUTOSTART => {
@@ -443,6 +481,7 @@ unsafe fn show_menu() {
     }
     add_item(menu, CMD_ADMIN, "Chạy với quyền admin", admin_on);
     AppendMenuW(menu, MF_SEPARATOR, 0, null());
+    add_item(menu, CMD_CHECK_UPDATE, "Kiểm tra cập nhật", false);
     add_item(menu, CMD_QUIT, "Thoát\tCtrl+Alt+Shift+Q", false);
 
     let window = WINDOW.get();
@@ -474,6 +513,10 @@ fn dispatch(msg: u32, wparam: WPARAM, lparam: LPARAM) -> Option<LRESULT> {
         }
         WM_ADMIN_DONE => {
             admin_changed(wparam as u32, lparam != 0);
+            Some(0)
+        }
+        WM_UPDATE_DONE => {
+            update_checked(*unsafe { Box::from_raw(lparam as *mut Check) });
             Some(0)
         }
         WM_STATE_CHANGED => {

@@ -13,7 +13,7 @@ Chưa có: cấu hình theo ứng dụng, cửa sổ cài đặt, trình cài đ
 - **An toàn hơn:** bộ gõ thấy mọi phím bạn gõ, kể cả mật khẩu. Rust tránh được lỗi bộ nhớ, loại lỗi hay gây crash và lỗ hổng bảo mật. Phần giao tiếp với Windows thì Rust chỉ bảo vệ được một phần.
 - **Gõ đúng như bản gốc:** đã so với phần xử lý tiếng Việt của UniKey trên khoảng 5,9 triệu phím thường (không dấu), kết quả giống hệt.
 - **Không crash ở những chỗ bản gốc crash:** khi thử, một số chuỗi phím làm bản C++ gốc crash, còn govn thì không.
-- **Gọn nhẹ:** chỉ một file `.exe` khoảng 340 KB, không cần cài thêm gì.
+- **Gọn nhẹ:** chỉ một file `.exe` khoảng 350 KB, không cần cài thêm gì.
 
 ## Chạy
 
@@ -23,7 +23,7 @@ Chạy `govn.exe`: không có cửa sổ, chỉ có icon ở khay hệ thống. 
 
 - Icon **V** đỏ: tiếng Việt. Icon **E** xám: English.
 - Nhấp trái icon hoặc nhấn Ctrl+Shift: bật/tắt.
-- Nhấp phải icon: kiểu gõ, bỏ dấu kiểu mới, kiểm tra chính tả, tự khôi phục, sửa lỗi gợi ý, khởi động cùng Windows, chạy với quyền admin, thoát.
+- Nhấp phải icon: kiểu gõ, bỏ dấu kiểu mới, kiểm tra chính tả, tự khôi phục, sửa lỗi gợi ý, khởi động cùng Windows, chạy với quyền admin, kiểm tra cập nhật, thoát.
 - Ctrl+Alt+Shift+Q: thoát.
 
 Cài đặt lưu ở `%APPDATA%\govn\settings.ini`. "Khởi động cùng Windows" ghi giá trị `govn` vào `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, không cần quyền admin.
@@ -42,6 +42,10 @@ Windows không cho chương trình quyền thường nhận hay gửi phím cho 
 - Menu → "Chạy với quyền admin": hỏi UAC một lần, tạo scheduled task `govn` chạy quyền cao nhất khi đăng nhập và thay cho mục khởi động cùng Windows. Mở `govn.exe` bằng tay lúc này cũng tự chuyển sang task.
 
 Chỉ bật khi `govn.exe` nằm ở thư mục chỉ admin sửa được, như `C:\Program Files\govn\`. Nếu không, phần mềm khác có thể thay file này để lên quyền admin mà không qua UAC.
+
+### Kiểm tra cập nhật
+
+Mục "Kiểm tra cập nhật" hỏi `api.github.com` phiên bản mới nhất. Đây là kết nối mạng duy nhất của govn và chỉ chạy khi bạn bấm. Yêu cầu không chứa gì bạn đã gõ; GitHub chỉ thấy địa chỉ IP và phiên bản govn. govn không tự tải hay tự cài: có bản mới thì nó hỏi rồi mở trang tải về, bạn tự thoát govn và chép đè file.
 
 ### Windows Defender
 
@@ -67,6 +71,7 @@ Nếu thư mục dự án nằm ở đường dẫn quá dài, linker báo `LNK1
 - `cargo test --workspace`: từ tiếng Việt thật, chuỗi phím ngẫu nhiên không được làm engine panic, đọc/ghi file cài đặt.
 - `tools/difftest.py`: so Rust với bản C++ gốc trên cùng chuỗi phím. Lấy `ukengine/` từ `ibus-unikey`, build oracle bằng `tools/oracle/build.bat` (đường dẫn trong file giả định `ibus-unikey/` nằm ngang hàng thư mục `tools` gốc), rồi:
   `ASCII_ONLY=1 python tools/difftest.py <oracle.exe> <trace.exe> 30000 1`
+- `cargo test -p govn real_github -- --ignored`: gọi GitHub thật. `tools/test_update.py <govn.exe> <chữ cần thấy>`: bấm mục kiểm tra cập nhật và đọc hộp thoại kết quả.
 - `cargo run --release -p govn --example e2e -- <govn.exe>`: gõ phím thật vào cửa sổ test riêng. Nó chỉ gõ khi cửa sổ test đang ở foreground. Phần khay kiểm tra từng lệnh menu bằng tác dụng thật khi gõ, dùng file cài đặt và khóa registry tạm.
 - `tools/test_chrome.py`: thử trên Chrome thật (hồ sơ tạm, trang local): thanh địa chỉ có gợi ý, `textarea`, `input`, `contenteditable`.
 - `tools/test_vscode.py`: thử trên VS Code thật (hồ sơ tạm, không extension), có đối chứng popup gợi ý.

@@ -8,15 +8,18 @@ use crate::config::{Hotkey, Settings};
 use crate::tray;
 use crate::tray_ids::{CMD_ADMIN, WINDOW_CLASS, WM_RELOAD};
 use crate::update::{self, Check};
-use crate::{wide, window_exe_name};
+use crate::{wide, window_exe_path};
 use govn_engine::InputMethod;
-use slint::{ComponentHandle, Model, ModelRc, SharedString, Timer, TimerMode, VecModel};
+use slint::{ComponentHandle, ModelRc, SharedString, Timer, TimerMode, VecModel};
+use std::cell::RefCell;
+use std::ffi::c_void;
 use std::path::{Path, PathBuf};
-use std::ptr::null;
+use std::ptr::{null, null_mut};
 use std::rc::Rc;
 use std::time::Duration;
 use windows_sys::Win32::Foundation::{GetLastError, BOOL, ERROR_ALREADY_EXISTS, HWND, LPARAM, POINT};
 use windows_sys::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTONEAREST};
+use windows_sys::Win32::Storage::FileSystem::{GetFileVersionInfoSizeW, GetFileVersionInfoW, VerQueryValueW};
 use windows_sys::Win32::System::Threading::{CreateMutexW, GetCurrentProcessId};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     AllowSetForegroundWindow, EnumWindows, FindWindowW, GetCursorPos, GetWindow, GetWindowTextLengthW, GetWindowThreadProcessId,
@@ -57,8 +60,60 @@ fn method_from(ui: &SettingsWindow, previous: InputMethod) -> InputMethod {
     }
 }
 
-/// Programs with a visible top-level window, by file name, after a placeholder item.
-fn running_apps() -> Vec<SharedString> {
+/// The "File description" in a program's version information, such as "Visual Studio Code".
+fn file_description(path: &str) -> Option<String> {
+    let file = wide(path);
+    unsafe {
+        let size = GetFileVersionInfoSizeW(file.as_ptr(), null_mut());
+        if size == 0 {
+            return None;
+        }
+        let mut data = vec![0u8; size as usize];
+        if GetFileVersionInfoW(file.as_ptr(), 0, size, data.as_mut_ptr().cast()) == 0 {
+            return None;
+        }
+        let block = data.as_ptr().cast();
+        let mut value: *mut c_void = null_mut();
+        let mut len = 0u32;
+        let mut tables = Vec::new();
+        if VerQueryValueW(block, wide("\\VarFileInfo\\Translation").as_ptr(), &mut value, &mut len) != 0 && len >= 4 {
+            let pair = value as *const u16;
+            tables.push(format!("{:04x}{:04x}", *pair, *pair.add(1)));
+        }
+        tables.extend(["040904b0".to_string(), "040904e4".to_string()]);
+        for table in tables {
+            let key = wide(&format!("\\StringFileInfo\\{table}\\FileDescription"));
+            if VerQueryValueW(block, key.as_ptr(), &mut value, &mut len) != 0 && len > 1 {
+                let text = std::slice::from_raw_parts(value as *const u16, len as usize - 1);
+                let text = String::from_utf16_lossy(text).trim().to_string();
+                if !text.is_empty() {
+                    return Some(text);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// "Visual Studio Code (code.exe)", or just the file name when the description adds nothing.
+fn app_label(exe: &str, description: Option<&str>) -> String {
+    match description {
+        Some(d) if !d.eq_ignore_ascii_case(exe.trim_end_matches(".exe")) && !d.eq_ignore_ascii_case(exe) => {
+            let d: String = d.chars().take(60).collect();
+            format!("{d} ({exe})")
+        }
+        _ => exe.to_string(),
+    }
+}
+
+/// A running program: file name and the label shown for it.
+struct App {
+    exe: String,
+    label: String,
+}
+
+/// Programs with a visible top-level window, sorted by label.
+fn running_apps() -> Vec<App> {
     unsafe extern "system" fn collect(window: HWND, list: LPARAM) -> BOOL {
         let list = &mut *(list as *mut Vec<HWND>);
         if IsWindowVisible(window) != 0 && GetWindowTextLengthW(window) > 0 && GetWindow(window, GW_OWNER).is_null() {
@@ -69,26 +124,41 @@ fn running_apps() -> Vec<SharedString> {
     let mut windows: Vec<HWND> = Vec::new();
     unsafe { EnumWindows(Some(collect), (&raw mut windows) as LPARAM) };
     let own = unsafe { GetCurrentProcessId() };
-    let mut names: Vec<String> = windows
+    let paths: Vec<String> = windows
         .into_iter()
         .filter(|&w| {
             let mut pid = 0u32;
             unsafe { GetWindowThreadProcessId(w, &mut pid) };
             pid != own
         })
-        .filter_map(window_exe_name)
+        .filter_map(window_exe_path)
         .collect();
-    names.sort();
-    names.dedup();
-    std::iter::once("Chọn ứng dụng…".to_string()).chain(names).map(SharedString::from).collect()
+    let mut apps: Vec<App> = Vec::new();
+    for path in paths {
+        let Some(exe) = path.rsplit('\\').next().map(str::to_lowercase) else { continue };
+        if apps.iter().any(|a| a.exe == exe) {
+            continue;
+        }
+        let label = app_label(&exe, file_description(&path).as_deref());
+        apps.push(App { exe, label });
+    }
+    apps.sort_by_key(|a| a.label.to_lowercase());
+    apps
 }
 
+/// The combo box items: a placeholder first, since the combo box always shows a selection.
+fn running_labels(apps: &[App]) -> Vec<SharedString> {
+    std::iter::once(SharedString::from("Chọn ứng dụng…")).chain(apps.iter().map(|a| SharedString::from(&a.label))).collect()
+}
+
+/// Fits the tallest tab, "Hệ thống"; keep in step with `preferred-*` in settings.slint.
+const SIZE: slint::LogicalSize = slint::LogicalSize { width: 560.0, height: 408.0 };
+
 /// Centres the window on the screen under the mouse, which is where the tray icon was clicked.
-/// Right after `show` the window still reports its minimum size, so the size is set here
-/// (the preferred size in settings.slint) before it is used.
+/// Right after `show` the window still reports its minimum size, so the size is set here first.
 fn center(ui: &SettingsWindow) {
-    ui.window().set_size(slint::LogicalSize::new(560.0, 480.0));
-    let size = slint::LogicalSize::new(560.0, 480.0).to_physical(ui.window().scale_factor());
+    ui.window().set_size(SIZE);
+    let size = SIZE.to_physical(ui.window().scale_factor());
     let mut info = MONITORINFO { cbSize: size_of::<MONITORINFO>() as u32, ..unsafe { std::mem::zeroed() } };
     let found = unsafe {
         let mut pt = POINT { x: 0, y: 0 };
@@ -104,8 +174,10 @@ fn center(ui: &SettingsWindow) {
     ui.window().set_position(slint::PhysicalPosition::new(x.max(work.left), y.max(work.top)));
 }
 
-fn set_apps(model: &VecModel<SharedString>, apps: &[String]) {
-    model.set_vec(apps.iter().map(SharedString::from).collect::<Vec<_>>());
+/// The list names running programs like the combo box does; the others by file name.
+fn set_apps(model: &VecModel<SharedString>, apps: &[String], running: &[App]) {
+    let label = |exe: &String| running.iter().find(|a| &a.exe == exe).map_or(exe.clone(), |a| a.label.clone());
+    model.set_vec(apps.iter().map(|e| SharedString::from(label(e))).collect::<Vec<_>>());
 }
 
 pub fn run(path: PathBuf, task: String, autostart_key: String) -> i32 {
@@ -128,15 +200,17 @@ pub fn run(path: PathBuf, task: String, autostart_key: String) -> i32 {
     let path = Rc::new(path);
 
     ui.set_method(i32::from(s.method == InputMethod::Vni));
-    ui.set_w_shortcuts(s.method != InputMethod::SimpleTelex);
+    // Under VNI the switch shows the default, which is also what choosing Telex gives.
+    ui.set_w_shortcuts(matches!(s.method, InputMethod::Telex | InputMethod::SimpleTelex2));
     ui.set_modern_style(s.modern_style);
     ui.set_spell_check(s.spell_check);
     ui.set_auto_restore(s.auto_restore);
 
+    let apps = Rc::new(RefCell::new(running_apps()));
     let english = Rc::new(VecModel::<SharedString>::default());
-    set_apps(&english, &s.english_apps);
+    set_apps(&english, &s.english_apps, &apps.borrow());
     ui.set_english_apps(ModelRc::from(english.clone()));
-    let running = Rc::new(VecModel::from(running_apps()));
+    let running = Rc::new(VecModel::from(running_labels(&apps.borrow())));
     ui.set_running_apps(ModelRc::from(running.clone()));
     ui.set_remember_apps(s.remember_apps);
 
@@ -164,35 +238,44 @@ pub fn run(path: PathBuf, task: String, autostart_key: String) -> i32 {
         }
     });
 
+    // The file names behind the rows of the list, which show labels.
+    let shown = Rc::new(RefCell::new(s.english_apps.clone()));
+    // Item 0 of the combo box is the placeholder.
     ui.on_add_app({
-        let (english, path) = (english.clone(), path.clone());
-        move |name| {
-            let mut apps = Vec::new();
+        let (english, path, apps, shown) = (english.clone(), path.clone(), apps.clone(), shown.clone());
+        move |i| {
+            let Some(exe) = (i as usize).checked_sub(1).and_then(|i| apps.borrow().get(i).map(|a| a.exe.clone())) else {
+                return;
+            };
+            let mut list = Vec::new();
             if edit(&path, |s| {
-                s.add_english_app(&name);
-                apps = s.english_apps.clone();
+                s.add_english_app(&exe);
+                list = s.english_apps.clone();
             }) {
-                set_apps(&english, &apps);
+                set_apps(&english, &list, &apps.borrow());
+                *shown.borrow_mut() = list;
             }
         }
     });
     ui.on_remove_app({
-        let (english, path) = (english.clone(), path.clone());
+        let (english, path, apps, shown) = (english.clone(), path.clone(), apps.clone(), shown.clone());
         move |i| {
-            let Some(name) = english.row_data(i as usize) else { return };
-            let mut apps = Vec::new();
+            let Some(exe) = shown.borrow().get(i as usize).cloned() else { return };
+            let mut list = Vec::new();
             if edit(&path, |s| {
-                s.english_apps.retain(|a| a.as_str() != name.as_str());
-                apps = s.english_apps.clone();
+                s.english_apps.retain(|a| *a != exe);
+                list = s.english_apps.clone();
             }) {
-                set_apps(&english, &apps);
+                set_apps(&english, &list, &apps.borrow());
+                *shown.borrow_mut() = list;
             }
         }
     });
     ui.on_refresh_running({
-        let (ui, running) = (ui.as_weak(), running.clone());
+        let (ui, running, apps) = (ui.as_weak(), running.clone(), apps.clone());
         move || {
-            running.set_vec(running_apps());
+            *apps.borrow_mut() = running_apps();
+            running.set_vec(running_labels(&apps.borrow()));
             if let Some(ui) = ui.upgrade() {
                 ui.set_running_index(0);
             }
@@ -309,13 +392,30 @@ mod tests {
     use super::*;
 
     #[test]
-    fn running_apps_lists_names_once() {
+    fn running_apps_lists_each_program_once() {
         let apps = running_apps();
-        let apps = apps[1..].to_vec();
-        let mut sorted = apps.clone();
-        sorted.sort();
-        sorted.dedup();
-        assert_eq!(apps, sorted);
-        assert!(apps.iter().all(|a| a.as_str() == a.to_lowercase()));
+        let mut exes: Vec<&str> = apps.iter().map(|a| a.exe.as_str()).collect();
+        assert!(exes.iter().all(|e| *e == e.to_lowercase()));
+        exes.sort();
+        exes.dedup();
+        assert_eq!(exes.len(), apps.len());
+        assert!(apps.iter().all(|a| a.label.ends_with(&a.exe) || a.label.ends_with(&format!("({})", a.exe))));
+        assert_eq!(running_labels(&apps).len(), apps.len() + 1);
+    }
+
+    #[test]
+    fn labels() {
+        assert_eq!(app_label("code.exe", Some("Visual Studio Code")), "Visual Studio Code (code.exe)");
+        assert_eq!(app_label("zalo.exe", Some("Zalo")), "zalo.exe");
+        assert_eq!(app_label("x.exe", None), "x.exe");
+        assert_eq!(app_label("x.exe", Some("X.EXE")), "x.exe");
+    }
+
+    #[test]
+    fn reads_description_of_a_system_program() {
+        let windir = std::env::var("WINDIR").unwrap();
+        let d = file_description(&format!("{windir}\\System32\\notepad.exe")).or_else(|| file_description(&format!("{windir}\\notepad.exe")));
+        assert!(d.is_some_and(|d| !d.is_empty()));
+        assert_eq!(file_description("C:\\no\\such\\file.exe"), None);
     }
 }

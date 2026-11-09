@@ -26,7 +26,7 @@ Cửa sổ Cài đặt là tiến trình riêng: `govn.exe --settings --config <
 
 - **Telex và VNI là hai kiểu gõ duy nhất trên giao diện.** SimpleTelex/SimpleTelex2 vẫn có trong engine; nút "Gõ w thành ư" trong Cài đặt chọn giữa Telex và SimpleTelex, và giữ nguyên SimpleTelex2 nếu người dùng đã chọn từ bản cũ.
 - **Không thêm gõ tắt** và các tính năng phụ kiểu đó; người dùng đã quyết định giữ app gọn.
-- **Mặc định giữ nguyên** (bỏ dấu kiểu cũ, phím tắt Ctrl+Shift). Đổi mặc định là đổi hành vi với người đang dùng.
+- **Mặc định:** Simple Telex (`w` đứng riêng vẫn là `w`; chọn Telex khi đang ở VNI cũng ra Simple Telex), bỏ dấu kiểu cũ, phím tắt Ctrl+Shift. Chỉ đổi khi người dùng yêu cầu, vì đổi mặc định là đổi hành vi với người mới cài.
 - **Mạng:** `update.rs` là kết nối mạng duy nhất và chỉ chạy khi người dùng bấm. Không gửi gì liên quan tới phím đã gõ, không tự tải hay tự cài.
 - **Engine:** chuỗi phím bất kỳ không được panic. Khi đổi logic engine, chạy `tools/difftest.py` so với bản C++ gốc.
 
@@ -34,6 +34,7 @@ Cửa sổ Cài đặt là tiến trình riêng: `govn.exe --settings --config <
 
 - Build release lần đầu mất 10-15 phút (Slint). `cargo build --release -p govn`.
 - Windows Defender đã nhiều lần chặn bản build nằm trong `%TEMP%` (`Trojan:Win32/Bearfoos.A!ml`, `Behavior:Win32/Execution.A!ml`) vì app đọc và gõ lại phím. Nếu build hoặc chạy bị chặn thì báo cho người dùng. **Không thêm exclusion cho Defender và không tìm cách né phát hiện.**
+- Icon app ("Gõ" trắng trên nền đỏ) vẽ bằng `pwsh -NoProfile -File tools/make_icon.ps1`, ra `app/govn.ico`, `app/ui/icon.png`, `docs/icon.png`. Không sửa tay các file đó. Icon V/E ở khay vẽ lúc chạy trong `tray.rs`.
 - Phiên bản nằm ở 3 chỗ, phải đổi cùng nhau: `Cargo.toml` (`[workspace.package] version`), `app/govn.rc` (`FILEVERSION`, `PRODUCTVERSION`, hai chuỗi `"x.y.z"`), `app/govn.manifest`.
 
 ## Test

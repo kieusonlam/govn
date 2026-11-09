@@ -91,10 +91,12 @@ component Segmented inherits Rectangle {
 
 export component SettingsWindow inherits Window {
     title: "govn - Cài đặt";
+    icon: @image-url("icon.png");
+    // Fits the tallest tab; keep in step with SIZE in settings.rs, which sets it on opening.
     preferred-width: 560px;
-    preferred-height: 480px;
+    preferred-height: 408px;
     min-width: 460px;
-    min-height: 420px;
+    min-height: 360px;
     default-font-size: 13px;
 
     // Typing
@@ -111,7 +113,7 @@ export component SettingsWindow inherits Window {
     // Item 0 is a placeholder, since the combo box always shows a selection.
     in-out property <int> running-index: 0;
     in-out property <bool> remember-apps;
-    callback add-app(string);
+    callback add-app(int);                   // index in running-apps
     callback remove-app(int);
     callback refresh-running();
     callback remember-changed(bool);
@@ -219,7 +221,7 @@ export component SettingsWindow inherits Window {
                                 text: "Thêm";
                                 enabled: root.running-index > 0;
                                 clicked => {
-                                    root.add-app(root.running-apps[root.running-index]);
+                                    root.add-app(root.running-index);
                                 }
                             }
                             Button {
@@ -228,7 +230,8 @@ export component SettingsWindow inherits Window {
                             }
                         }
                         Text {
-                            text: "Chọn trong các ứng dụng đang mở cửa sổ.";
+                            text: "Chọn trong các ứng dụng đang mở. Trong ngoặc là tên file chạy. Thêm xong, chuyển sang ứng dụng đó: icon ở khay thành E là đúng.";
+                            wrap: word-wrap;
                             font-size: 11.5px;
                             color: Palette.foreground.transparentize(0.4);
                         }

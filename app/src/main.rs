@@ -136,6 +136,11 @@ fn is_numpad(vk: u16) -> bool {
 
 /// File name of the program owning a window, in lower case.
 fn window_exe_name(h: HWND) -> Option<String> {
+    window_exe_path(h).and_then(|p| p.rsplit('\\').next().map(str::to_lowercase))
+}
+
+/// Full path of the program that owns a window.
+fn window_exe_path(h: HWND) -> Option<String> {
     let mut pid = 0u32;
     unsafe { GetWindowThreadProcessId(h, &mut pid) };
     let mut buf = [0u16; 1024];
@@ -152,8 +157,7 @@ fn window_exe_name(h: HWND) -> Option<String> {
     if ok == 0 {
         return None;
     }
-    let path = String::from_utf16_lossy(&buf[..len as usize]);
-    path.rsplit('\\').next().map(str::to_lowercase)
+    Some(String::from_utf16_lossy(&buf[..len as usize]))
 }
 
 fn notify_state_changed(st: &State) {

@@ -69,7 +69,8 @@ impl Default for Settings {
         let o = Options::default();
         Settings {
             viet: true,
-            method: InputMethod::Telex,
+            // w alone stays w: fewer surprises when typing English or code.
+            method: InputMethod::SimpleTelex,
             modern_style: o.modern_style,
             spell_check: o.spell_check,
             auto_restore: o.auto_non_vn_restore,

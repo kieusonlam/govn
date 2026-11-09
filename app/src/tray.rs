@@ -474,7 +474,11 @@ fn run_command(cmd: usize) {
                 let on = !st.engine.viet_key;
                 crate::set_viet(st, on);
             }
-            CMD_TELEX => st.engine.set_input_method(InputMethod::Telex),
+            // Any Telex variant already counts as Telex; from VNI, take the default variant (w stays w).
+            CMD_TELEX if st.engine.input_method() == InputMethod::Vni => {
+                st.engine.set_input_method(InputMethod::SimpleTelex)
+            }
+            CMD_TELEX => {}
             CMD_VNI => st.engine.set_input_method(InputMethod::Vni),
             CMD_SIMPLE => st.engine.set_input_method(InputMethod::SimpleTelex),
             CMD_SIMPLE2 => st.engine.set_input_method(InputMethod::SimpleTelex2),

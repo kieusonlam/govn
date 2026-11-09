@@ -13,7 +13,7 @@ Chưa có: trình cài đặt. Không định thêm gõ tắt.
 - **An toàn hơn:** bộ gõ thấy mọi phím bạn gõ, kể cả mật khẩu. Rust tránh được lỗi bộ nhớ, loại lỗi hay gây crash và lỗ hổng bảo mật. Phần giao tiếp với Windows thì Rust chỉ bảo vệ được một phần.
 - **Gõ đúng như bản gốc:** đã so với phần xử lý tiếng Việt của UniKey trên khoảng 5,9 triệu phím thường (không dấu), kết quả giống hệt.
 - **Không crash ở những chỗ bản gốc crash:** khi thử, một số chuỗi phím làm bản C++ gốc crash, còn govn thì không.
-- **Một file:** chỉ một file `.exe`, không cần cài thêm gì. Phần chạy nền chỉ dùng Win32; cửa sổ cài đặt dùng [Slint](https://slint.dev) và chạy thành tiến trình riêng khi bạn mở, nên phần đọc phím không mang theo nó.
+- **Một file:** chỉ một file `.exe`, không cần cài thêm gì. Phần chạy nền chỉ dùng Win32; cửa sổ cài đặt dùng [Slint](https://slint.dev) và chạy thành tiến trình riêng khi bạn mở, nên phần đọc phím không mang theo nó. File khoảng 9,7 MB, phần lớn là Slint.
 
 ## Chạy
 
@@ -70,6 +70,8 @@ cargo build --release
 
 Lần build đầu mất khoảng 10-15 phút vì phải biên dịch Slint; các lần sau nhanh hơn nhiều.
 
+Khi phát hành, `python tools/third_party.py THIRD-PARTY-LICENSES.txt` gom giấy phép của mọi thư viện nằm trong `govn.exe` để đóng gói cùng.
+
 Nếu thư mục dự án nằm ở đường dẫn quá dài, linker báo `LNK1104`: đặt `CARGO_TARGET_DIR` sang một đường dẫn ngắn.
 
 ## Test
@@ -86,3 +88,7 @@ Nếu thư mục dự án nằm ở đường dẫn quá dài, linker báo `LNK1
 - `tools/test_admin_menu.py`: bật chế độ admin từ menu với file trong `Program Files`, xong tự dọn. Cần bấm UAC hai lần.
 
 `engine/src/tables.rs` được sinh tự động bằng `tools/gen_tables.py`, không sửa tay.
+
+## Giấy phép
+
+Mã của govn theo GPL-3.0-or-later (`LICENSE`). Engine port từ `ukengine` của UniKey, tác giả Phạm Kim Long (xem `NOTICE`). Slint chỉ dùng được theo GPL-3.0, nên file `govn.exe` build ra phát hành theo GPL-3.0.

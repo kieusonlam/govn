@@ -3,7 +3,7 @@
 //! `STATE` is never kept borrowed across a Win32 call that can pump messages, because the keyboard
 //! hook runs on this same thread and borrows it too.
 use crate::admin;
-use crate::config::{AppMemory, Hotkey, Settings, SuggestionFix};
+use crate::config::{self, AppMemory, Hotkey, Settings, SuggestionFix};
 use crate::tray_ids::*;
 use crate::update::{self, Check};
 use crate::{apply_settings, current_settings, wide, STATE};
@@ -30,7 +30,7 @@ use windows_sys::Win32::UI::Shell::{
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, ChangeWindowMessageFilterEx, CheckMenuRadioItem, CreateIconIndirect, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, EnableMenuItem, GetCursorPos,
     GetSystemMetrics, MessageBoxW, PostMessageW, PostQuitMessage, RegisterClassW, RegisterWindowMessageW,
-    SetForegroundWindow, TrackPopupMenu, HICON, HMENU, ICONINFO, MB_ICONERROR, MB_ICONWARNING, MB_OK, MB_YESNO, MF_BYCOMMAND, MF_CHECKED, MF_GRAYED, MSGFLT_ALLOW, IDYES, MF_SEPARATOR,
+    SetForegroundWindow, TrackPopupMenu, HICON, HMENU, ICONINFO, MB_ICONERROR, MB_ICONWARNING, MB_OK, MB_YESNO, MF_BYCOMMAND, MF_CHECKED, MF_GRAYED, MSGFLT_ALLOW, IDYES, MF_POPUP, MF_SEPARATOR,
     MB_ICONINFORMATION, MF_STRING, SM_CXSMICON, TPM_RETURNCMD, TPM_RIGHTBUTTON, WM_COMMAND, WM_LBUTTONDBLCLK, WM_LBUTTONUP, WM_NULL, WM_RBUTTONUP, WNDCLASSW,
     WS_POPUP,
 };
@@ -145,12 +145,7 @@ fn copy_utf16(dst: &mut [u16], text: &str) {
 }
 
 fn method_name(m: InputMethod) -> &'static str {
-    match m {
-        InputMethod::Telex => "Telex",
-        InputMethod::Vni => "VNI",
-        InputMethod::SimpleTelex => "Simple Telex",
-        InputMethod::SimpleTelex2 => "Simple Telex 2",
-    }
+    if m == InputMethod::Vni { "VNI" } else { "Telex" }
 }
 
 unsafe fn icon_data() -> NOTIFYICONDATAW {
@@ -474,14 +469,8 @@ fn run_command(cmd: usize) {
                 let on = !st.engine.viet_key;
                 crate::set_viet(st, on);
             }
-            // Any Telex variant already counts as Telex; from VNI, take the default variant (w stays w).
-            CMD_TELEX if st.engine.input_method() == InputMethod::Vni => {
-                st.engine.set_input_method(InputMethod::SimpleTelex)
-            }
-            CMD_TELEX => {}
+            CMD_TELEX => st.engine.set_input_method(config::TELEX),
             CMD_VNI => st.engine.set_input_method(InputMethod::Vni),
-            CMD_SIMPLE => st.engine.set_input_method(InputMethod::SimpleTelex),
-            CMD_SIMPLE2 => st.engine.set_input_method(InputMethod::SimpleTelex2),
             CMD_MODERN => options.modern_style = !options.modern_style,
             CMD_SPELL => options.spell_check = !options.spell_check,
             CMD_RESTORE => options.auto_non_vn_restore = !options.auto_non_vn_restore,
@@ -506,26 +495,52 @@ unsafe fn add_item(menu: HMENU, id: usize, text: &str, checked: bool) {
     AppendMenuW(menu, flags, id, wide(text).as_ptr());
 }
 
-/// The everyday switches only; everything else is in the settings window. The other commands still
-/// work when posted, which the end-to-end test relies on.
 unsafe fn show_menu() {
     let (Some(s), Some((viet, _))) = (snapshot(), shown_state()) else { return };
     let has_settings = STATE.with_borrow(|st| st.as_ref().is_some_and(|st| st.config_path.is_some()));
+
+    let admin_on = ADMIN_ENABLED.get();
+    let autostart = admin_on || autostart_get(&autostart_key()).is_some();
+
+    // Every option stays reachable from here; the settings window is a roomier view of the same.
+    let methods = CreatePopupMenu();
+    add_item(methods, CMD_TELEX, "Telex", false);
+    add_item(methods, CMD_VNI, "VNI", false);
+    let method_id = if s.method == InputMethod::Vni { CMD_VNI } else { CMD_TELEX };
+    CheckMenuRadioItem(methods, CMD_TELEX as u32, CMD_VNI as u32, method_id as u32, MF_BYCOMMAND);
+
+    let fixes = CreatePopupMenu();
+    add_item(fixes, CMD_FIX_AUTO, "Tự động (trình duyệt, Excel)", false);
+    add_item(fixes, CMD_FIX_ALWAYS, "Luôn bật", false);
+    add_item(fixes, CMD_FIX_NEVER, "Tắt", false);
+    let fix_id = match s.suggestion_fix {
+        SuggestionFix::Auto => CMD_FIX_AUTO,
+        SuggestionFix::Always => CMD_FIX_ALWAYS,
+        SuggestionFix::Never => CMD_FIX_NEVER,
+    };
+    CheckMenuRadioItem(fixes, CMD_FIX_AUTO as u32, CMD_FIX_NEVER as u32, fix_id as u32, MF_BYCOMMAND);
 
     let menu = CreatePopupMenu();
     let toggle = if s.hotkey == Hotkey::None { "Tiếng Việt".to_string() } else { format!("Tiếng Việt\t{}", s.hotkey.label()) };
     add_item(menu, CMD_TOGGLE, &toggle, viet);
     AppendMenuW(menu, MF_SEPARATOR, 0, null());
-    add_item(menu, CMD_TELEX, "Telex", false);
-    add_item(menu, CMD_VNI, "VNI", false);
-    // Simple Telex is a Telex option in the settings window.
-    let method_id = if s.method == InputMethod::Vni { CMD_VNI } else { CMD_TELEX };
-    CheckMenuRadioItem(menu, CMD_TELEX as u32, CMD_VNI as u32, method_id as u32, MF_BYCOMMAND);
+    AppendMenuW(menu, MF_POPUP, methods as usize, wide(&format!("Kiểu gõ: {}", method_name(s.method))).as_ptr());
+    add_item(menu, CMD_MODERN, "Bỏ dấu kiểu mới (oà, uý)", s.modern_style);
+    add_item(menu, CMD_SPELL, "Kiểm tra chính tả", s.spell_check);
+    add_item(menu, CMD_RESTORE, "Tự trả về chữ gốc khi không phải tiếng Việt", s.auto_restore);
+    AppendMenuW(menu, MF_POPUP, fixes as usize, wide("Sửa lỗi gợi ý tự động").as_ptr());
+    AppendMenuW(menu, MF_SEPARATOR, 0, null());
+    add_item(menu, CMD_AUTOSTART, "Khởi động cùng Windows", autostart);
+    if admin_on {
+        EnableMenuItem(menu, CMD_AUTOSTART as u32, MF_BYCOMMAND | MF_GRAYED);
+    }
+    add_item(menu, CMD_ADMIN, "Chạy với quyền admin", admin_on);
     AppendMenuW(menu, MF_SEPARATOR, 0, null());
     add_item(menu, CMD_SETTINGS, "Cài đặt...", false);
     if !has_settings {
         EnableMenuItem(menu, CMD_SETTINGS as u32, MF_BYCOMMAND | MF_GRAYED);
     }
+    add_item(menu, CMD_CHECK_UPDATE, "Kiểm tra cập nhật", false);
     add_item(menu, CMD_QUIT, "Thoát\tCtrl+Alt+Shift+Q", false);
 
     let window = WINDOW.get();

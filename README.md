@@ -23,9 +23,9 @@ Chạy `govn.exe`: không có cửa sổ, chỉ có icon ở khay hệ thống. 
 
 - Icon **V** đỏ: tiếng Việt. Icon **E** xám: English.
 - Nhấp trái icon hoặc nhấn phím tắt (mặc định Ctrl+Shift): bật/tắt.
-- Nhấp phải icon: bật/tắt, Telex/VNI, Cài đặt, thoát. Nhấp đúp icon cũng mở Cài đặt.
+- Nhấp phải icon: menu có đủ mọi tùy chọn (kiểu gõ, bỏ dấu, chính tả, sửa lỗi gợi ý, khởi động cùng Windows, quyền admin, kiểm tra cập nhật), cùng mục Cài đặt và Thoát. Nhấp đúp icon cũng mở Cài đặt.
 - Cửa sổ Cài đặt:
-  - **Gõ phím:** Telex/VNI, gõ `w` thành `ư` và `[ ]` thành `ơ ư` (mặc định tắt, tức Simple Telex), bỏ dấu kiểu mới, kiểm tra chính tả, tự trả về chữ gốc.
+  - **Gõ phím:** Telex hoặc VNI, bỏ dấu kiểu mới, kiểm tra chính tả, tự trả về chữ gốc.
   - **Ứng dụng:** danh sách ứng dụng luôn gõ tiếng Anh, chọn từ các cửa sổ đang mở (ghi tên ứng dụng kèm tên file, như "Visual Studio Code (code.exe)"); nhớ tiếng Việt/tiếng Anh theo từng ứng dụng.
   - **Hệ thống:** phím tắt (Ctrl+Shift, Ctrl+Alt, Alt+Z hoặc không dùng), khởi động cùng Windows, chạy với quyền admin, kiểm tra cập nhật.
 
@@ -39,7 +39,7 @@ Cài đặt lưu ở `%APPDATA%\govn\settings.ini`; trạng thái nhớ theo ứ
 Tham số dòng lệnh ghi đè cài đặt đã lưu:
 
 ```
-govn [--method telex|vni|simple|simple2] [--modern] [--no-spell-check] [--auto-restore] [--off] [--suggestion-fix auto|always|never] [--config <file>] [--settings]
+govn [--method telex|vni] [--modern] [--no-spell-check] [--auto-restore] [--off] [--suggestion-fix auto|always|never] [--config <file>] [--settings]
 ```
 
 ### Ứng dụng chạy quyền admin

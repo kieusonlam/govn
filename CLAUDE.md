@@ -24,9 +24,10 @@ Cửa sổ Cài đặt là tiến trình riêng: `govn.exe --settings --config <
 
 ## Ràng buộc khi sửa
 
-- **Telex và VNI là hai kiểu gõ duy nhất trên giao diện.** SimpleTelex/SimpleTelex2 vẫn có trong engine; nút "Gõ w thành ư" trong Cài đặt chọn giữa Telex và SimpleTelex, và giữ nguyên SimpleTelex2 nếu người dùng đã chọn từ bản cũ.
+- **Chỉ có Telex và VNI, không có kiểu gõ tắt.** Telex của govn là `InputMethod::SimpleTelex` của engine (`config::TELEX`): gõ đầy đủ như trên điện thoại (`uw` → ư, `ow` → ơ); `w` đứng riêng và `[ ]` giữ nguyên. Telex/SimpleTelex2 của engine không đưa ra giao diện; file cài đặt cũ ghi `simple`, `simple2` đều đọc thành Telex.
+- **Menu khay giữ đủ mọi tùy chọn** (người dùng muốn ai thích chỉnh gì thì chỉnh ngay ở đó); cửa sổ Cài đặt là chỗ rộng hơn cho cùng các tùy chọn, cộng danh sách ứng dụng và phím tắt.
 - **Không thêm gõ tắt** và các tính năng phụ kiểu đó; người dùng đã quyết định giữ app gọn.
-- **Mặc định:** Simple Telex (`w` đứng riêng vẫn là `w`; chọn Telex khi đang ở VNI cũng ra Simple Telex), bỏ dấu kiểu cũ, phím tắt Ctrl+Shift. Chỉ đổi khi người dùng yêu cầu, vì đổi mặc định là đổi hành vi với người mới cài.
+- **Mặc định:** Telex, bỏ dấu kiểu cũ, phím tắt Ctrl+Shift. Chỉ đổi khi người dùng yêu cầu, vì đổi mặc định là đổi hành vi với người mới cài.
 - **Mạng:** `update.rs` là kết nối mạng duy nhất và chỉ chạy khi người dùng bấm. Không gửi gì liên quan tới phím đã gõ, không tự tải hay tự cài.
 - **Engine:** chuỗi phím bất kỳ không được panic. Khi đổi logic engine, chạy `tools/difftest.py` so với bản C++ gốc.
 

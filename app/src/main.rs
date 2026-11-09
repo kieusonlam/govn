@@ -445,7 +445,7 @@ fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
-const USAGE: &str = "govn [--method telex|vni|simple|simple2] [--modern] [--no-spell-check] [--auto-restore] [--off] [--suggestion-fix auto|always|never] [--config <file>] [--settings]";
+const USAGE: &str = "govn [--method telex|vni] [--modern] [--no-spell-check] [--auto-restore] [--off] [--suggestion-fix auto|always|never] [--config <file>] [--settings]";
 
 /// Command-line values override the saved settings.
 #[derive(Default)]

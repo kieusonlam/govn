@@ -50,14 +50,8 @@ fn edit(path: &Path, change: impl FnOnce(&mut Settings)) -> bool {
     true
 }
 
-fn method_from(ui: &SettingsWindow, previous: InputMethod) -> InputMethod {
-    match (ui.get_method(), ui.get_w_shortcuts()) {
-        (1, _) => InputMethod::Vni,
-        // Simple Telex 2 (w but no brackets) is kept for those who chose it in an older version.
-        (_, true) if previous == InputMethod::SimpleTelex2 => InputMethod::SimpleTelex2,
-        (_, true) => InputMethod::Telex,
-        (_, false) => InputMethod::SimpleTelex,
-    }
+fn method_from(ui: &SettingsWindow) -> InputMethod {
+    if ui.get_method() == 1 { InputMethod::Vni } else { crate::config::TELEX }
 }
 
 /// The "File description" in a program's version information, such as "Visual Studio Code".
@@ -200,8 +194,6 @@ pub fn run(path: PathBuf, task: String, autostart_key: String) -> i32 {
     let path = Rc::new(path);
 
     ui.set_method(i32::from(s.method == InputMethod::Vni));
-    // Under VNI the switch shows the default, which is also what choosing Telex gives.
-    ui.set_w_shortcuts(matches!(s.method, InputMethod::Telex | InputMethod::SimpleTelex2));
     ui.set_modern_style(s.modern_style);
     ui.set_spell_check(s.spell_check);
     ui.set_auto_restore(s.auto_restore);
@@ -230,7 +222,7 @@ pub fn run(path: PathBuf, task: String, autostart_key: String) -> i32 {
         move || {
             let Some(ui) = ui.upgrade() else { return };
             edit(&path, |s| {
-                s.method = method_from(&ui, s.method);
+                s.method = method_from(&ui);
                 s.modern_style = ui.get_modern_style();
                 s.spell_check = ui.get_spell_check();
                 s.auto_restore = ui.get_auto_restore();

@@ -162,3 +162,26 @@ fn no_key_sequence_panics() {
         }
     }
 }
+
+/// govn offers Telex as the engine's Simple Telex: marks typed in full, no `w` or `[ ]` shortcuts.
+#[test]
+fn simple_telex_has_no_shortcuts() {
+    let mut e = Engine::new();
+    e.set_input_method(InputMethod::SimpleTelex);
+    for (keys, want) in [
+        ("w", "w"),
+        ("[", "["),
+        ("]", "]"),
+        ("windows", "windows"),
+        ("uw", "ư"),
+        ("ow", "ơ"),
+        ("aw", "ă"),
+        ("tuw", "tư"),
+        ("nguoiwf", "người"),
+        ("dduwowngf", "đường"),
+        ("tieengs vieetj", "tiếng việt"),
+    ] {
+        e.reset();
+        assert_eq!(type_all(&mut e, keys), want, "{keys}");
+    }
+}

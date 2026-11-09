@@ -69,8 +69,7 @@ impl Default for Settings {
         let o = Options::default();
         Settings {
             viet: true,
-            // w alone stays w: fewer surprises when typing English or code.
-            method: InputMethod::SimpleTelex,
+            method: TELEX,
             modern_style: o.modern_style,
             spell_check: o.spell_check,
             auto_restore: o.auto_non_vn_restore,
@@ -133,12 +132,7 @@ impl Settings {
     }
 
     pub fn serialize(&self) -> String {
-        let method = match self.method {
-            InputMethod::Telex => "telex",
-            InputMethod::Vni => "vni",
-            InputMethod::SimpleTelex => "simple",
-            InputMethod::SimpleTelex2 => "simple2",
-        };
+        let method = if self.method == InputMethod::Vni { "vni" } else { "telex" };
         let fix = match self.suggestion_fix {
             SuggestionFix::Auto => "auto",
             SuggestionFix::Always => "always",
@@ -226,12 +220,15 @@ impl AppMemory {
     }
 }
 
+/// govn's Telex: every mark is typed in full (`uw` for ư, `ow` for ơ), as on phone keyboards.
+/// `w` alone and `[ ]` stay as typed; the engine's shortcut variants are not offered.
+pub const TELEX: InputMethod = InputMethod::SimpleTelex;
+
+/// Older versions wrote "simple" and "simple2" too; all Telex variants now mean [`TELEX`].
 pub fn parse_method(v: &str) -> Option<InputMethod> {
     match v {
-        "telex" => Some(InputMethod::Telex),
+        "telex" | "simple" | "simple2" => Some(TELEX),
         "vni" => Some(InputMethod::Vni),
-        "simple" => Some(InputMethod::SimpleTelex),
-        "simple2" => Some(InputMethod::SimpleTelex2),
         _ => None,
     }
 }
@@ -271,6 +268,17 @@ mod tests {
             let s = Settings { hotkey: h, ..Settings::default() };
             assert_eq!(Settings::parse(&s.serialize()).hotkey, h);
         }
+    }
+
+    #[test]
+    fn every_telex_variant_reads_as_telex() {
+        for old in ["telex", "simple", "simple2"] {
+            let s = Settings::parse(&format!("method={old}\n"));
+            assert_eq!(s.method, TELEX, "{old}");
+            assert!(s.serialize().contains("method=telex\n"));
+        }
+        assert_eq!(Settings::default().method, TELEX);
+        assert_eq!(Settings::parse("method=vni\n").method, InputMethod::Vni);
     }
 
     #[test]
@@ -316,7 +324,7 @@ mod tests {
     fn save_and_load() {
         let dir = std::env::temp_dir().join(format!("govn-config-test-{}", std::process::id()));
         let path = dir.join("nested").join("settings.ini");
-        let s = Settings { method: InputMethod::SimpleTelex2, english_apps: vec!["a.exe".into()], ..Settings::default() };
+        let s = Settings { method: InputMethod::Vni, english_apps: vec!["a.exe".into()], ..Settings::default() };
         s.save(&path).unwrap();
         assert_eq!(Settings::load(&path), s);
         let mem_path = AppMemory::path_for(&path);

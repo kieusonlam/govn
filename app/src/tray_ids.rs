@@ -12,6 +12,8 @@ pub const WM_STATE_CHANGED: u32 = WM_APP + 2;
 pub const WM_ADMIN_DONE: u32 = WM_APP + 3;
 /// Posted when the update check ends: `lparam` is a `Box<update::Check>` turned into a raw pointer.
 pub const WM_UPDATE_DONE: u32 = WM_APP + 4;
+/// Posted by the settings window after it saved: read the settings file again.
+pub const WM_RELOAD: u32 = WM_APP + 5;
 
 pub const CMD_TOGGLE: usize = 1001;
 pub const CMD_TELEX: usize = 1010;
@@ -27,4 +29,5 @@ pub const CMD_FIX_NEVER: usize = 1032;
 pub const CMD_AUTOSTART: usize = 1040;
 pub const CMD_ADMIN: usize = 1041;
 pub const CMD_CHECK_UPDATE: usize = 1050;
+pub const CMD_SETTINGS: usize = 1060;
 pub const CMD_QUIT: usize = 1099;

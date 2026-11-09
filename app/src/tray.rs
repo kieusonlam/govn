@@ -3,10 +3,10 @@
 //! `STATE` is never kept borrowed across a Win32 call that can pump messages, because the keyboard
 //! hook runs on this same thread and borrows it too.
 use crate::admin;
-use crate::config::{Settings, SuggestionFix};
+use crate::config::{AppMemory, Hotkey, Settings, SuggestionFix};
 use crate::tray_ids::*;
 use crate::update::{self, Check};
-use crate::{current_settings, wide, STATE};
+use crate::{apply_settings, current_settings, wide, STATE};
 use govn_engine::{InputMethod, Options};
 use std::cell::Cell;
 use std::ffi::c_void;
@@ -30,8 +30,8 @@ use windows_sys::Win32::UI::Shell::{
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, ChangeWindowMessageFilterEx, CheckMenuRadioItem, CreateIconIndirect, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, EnableMenuItem, GetCursorPos,
     GetSystemMetrics, MessageBoxW, PostMessageW, PostQuitMessage, RegisterClassW, RegisterWindowMessageW,
-    SetForegroundWindow, TrackPopupMenu, HICON, HMENU, ICONINFO, MB_ICONERROR, MB_ICONWARNING, MB_OK, MB_YESNO, MF_BYCOMMAND, MF_CHECKED, MF_GRAYED, MSGFLT_ALLOW, IDYES, MF_POPUP, MF_SEPARATOR,
-    MB_ICONINFORMATION, MF_STRING, SM_CXSMICON, TPM_RETURNCMD, TPM_RIGHTBUTTON, WM_COMMAND, WM_LBUTTONUP, WM_NULL, WM_RBUTTONUP, WNDCLASSW,
+    SetForegroundWindow, TrackPopupMenu, HICON, HMENU, ICONINFO, MB_ICONERROR, MB_ICONWARNING, MB_OK, MB_YESNO, MF_BYCOMMAND, MF_CHECKED, MF_GRAYED, MSGFLT_ALLOW, IDYES, MF_SEPARATOR,
+    MB_ICONINFORMATION, MF_STRING, SM_CXSMICON, TPM_RETURNCMD, TPM_RIGHTBUTTON, WM_COMMAND, WM_LBUTTONDBLCLK, WM_LBUTTONUP, WM_NULL, WM_RBUTTONUP, WNDCLASSW,
     WS_POPUP,
 };
 
@@ -129,6 +129,11 @@ fn snapshot() -> Option<Settings> {
     STATE.with_borrow(|s| s.as_ref().map(current_settings))
 }
 
+/// What the icon shows: Vietnamese can be off just for the program in front.
+fn shown_state() -> Option<(bool, bool)> {
+    STATE.with_borrow(|s| s.as_ref().map(|st| (st.engine.viet_key, st.viet_outside.is_some())))
+}
+
 fn copy_utf16(dst: &mut [u16], text: &str) {
     let max = dst.len() - 1;
     let mut n = 0;
@@ -157,14 +162,17 @@ unsafe fn icon_data() -> NOTIFYICONDATAW {
 }
 
 unsafe fn fill_icon(d: &mut NOTIFYICONDATAW) {
-    let Some(s) = snapshot() else { return };
+    let (Some(s), Some((viet, forced))) = (snapshot(), shown_state()) else { return };
     d.uFlags |= NIF_ICON | NIF_TIP | NIF_MESSAGE;
     d.uCallbackMessage = WM_TRAY;
-    d.hIcon = if s.viet { ICON_V.get() } else { ICON_E.get() };
-    let tip = if s.viet {
-        format!("govn: Tiếng Việt ({})\nNhấp để tắt, Ctrl+Shift", method_name(s.method))
+    d.hIcon = if viet { ICON_V.get() } else { ICON_E.get() };
+    let hotkey = if s.hotkey == Hotkey::None { String::new() } else { format!(", {}", s.hotkey.label()) };
+    let tip = if forced && !viet {
+        "govn: English (ứng dụng này luôn gõ tiếng Anh)".to_string()
+    } else if viet {
+        format!("govn: Tiếng Việt ({})\nNhấp để tắt{hotkey}", method_name(s.method))
     } else {
-        "govn: English\nNhấp để bật, Ctrl+Shift".to_string()
+        format!("govn: English\nNhấp để bật{hotkey}")
     };
     copy_utf16(&mut d.szTip, &tip);
 }
@@ -179,6 +187,10 @@ fn add_icon() {
         fill_icon(&mut d);
         Shell_NotifyIconW(NIM_ADD, &d);
     }
+}
+
+pub fn refresh() {
+    refresh_icon();
 }
 
 fn refresh_icon() {
@@ -220,7 +232,7 @@ fn exe_command() -> Option<Vec<u16>> {
     Some(wide(&format!("\"{}\"", exe.display())))
 }
 
-fn autostart_get(key: &str) -> Option<String> {
+pub fn autostart_get(key: &str) -> Option<String> {
     let mut buf = [0u16; 1024];
     let mut bytes = (buf.len() * 2) as u32;
     let r = unsafe {
@@ -237,7 +249,7 @@ fn autostart_get(key: &str) -> Option<String> {
     (r == ERROR_SUCCESS).then(|| String::from_utf16_lossy(&buf[..(bytes as usize / 2).saturating_sub(1)]))
 }
 
-fn autostart_set(key: &str, on: bool) -> bool {
+pub fn autostart_set(key: &str, on: bool) -> bool {
     unsafe {
         if on {
             let Some(cmd) = exe_command() else { return false };
@@ -362,6 +374,8 @@ fn update_checked(result: Check) {
     }
 }
 
+/// Every change the settings window makes reaches this process through `WM_RELOAD` first, so what
+/// it writes here includes them.
 fn save_settings() -> bool {
     let (settings, path) = STATE.with_borrow(|s| match s.as_ref() {
         Some(st) => (Some(current_settings(st)), st.config_path.clone()),
@@ -370,6 +384,53 @@ fn save_settings() -> bool {
     match (settings, path) {
         (Some(s), Some(p)) => s.save(&p).is_ok(),
         _ => true,
+    }
+}
+
+fn save_memory() {
+    STATE.with_borrow(|s| {
+        if let Some(st) = s.as_ref() {
+            if let (true, Some(p)) = (st.remember_apps, st.config_path.as_deref()) {
+                let _ = st.memory.save(&AppMemory::path_for(p));
+            }
+        }
+    });
+}
+
+/// On exit.
+pub fn save_all() {
+    save_settings();
+    save_memory();
+}
+
+/// The settings window wrote the file.
+fn reload_settings() {
+    let Some(path) = STATE.with_borrow(|s| s.as_ref().and_then(|st| st.config_path.clone())) else { return };
+    let loaded = Settings::load(&path);
+    STATE.with_borrow_mut(|s| {
+        if let Some(st) = s.as_mut() {
+            apply_settings(st, &loaded);
+        }
+    });
+    refresh_icon();
+}
+
+/// A separate process, so the keyboard never carries the window's memory; it inherits this one's rights.
+fn open_settings() {
+    let Some((path, task, key)) = STATE.with_borrow(|s| {
+        s.as_ref().and_then(|st| st.config_path.clone().map(|p| (p, st.task_name.clone(), st.autostart_key.clone())))
+    }) else {
+        return;
+    };
+    let Ok(exe) = std::env::current_exe() else { return };
+    let started = std::process::Command::new(exe)
+        .arg("--settings")
+        .arg("--config")
+        .arg(path)
+        .args(["--task-name", &task, "--autostart-key", &key])
+        .spawn();
+    if started.is_err() {
+        message_box("Không mở được cửa sổ cài đặt.");
     }
 }
 
@@ -385,6 +446,10 @@ fn run_command(cmd: usize) {
         }
         CMD_CHECK_UPDATE => {
             check_update();
+            return;
+        }
+        CMD_SETTINGS => {
+            open_settings();
             return;
         }
         CMD_AUTOSTART => {
@@ -406,8 +471,8 @@ fn run_command(cmd: usize) {
         let mut options: Options = st.engine.options;
         match cmd {
             CMD_TOGGLE => {
-                st.engine.reset();
-                st.engine.viet_key = !st.engine.viet_key;
+                let on = !st.engine.viet_key;
+                crate::set_viet(st, on);
             }
             CMD_TELEX => st.engine.set_input_method(InputMethod::Telex),
             CMD_VNI => st.engine.set_input_method(InputMethod::Vni),
@@ -437,51 +502,26 @@ unsafe fn add_item(menu: HMENU, id: usize, text: &str, checked: bool) {
     AppendMenuW(menu, flags, id, wide(text).as_ptr());
 }
 
+/// The everyday switches only; everything else is in the settings window. The other commands still
+/// work when posted, which the end-to-end test relies on.
 unsafe fn show_menu() {
-    let Some(s) = snapshot() else { return };
-    let admin_on = ADMIN_ENABLED.get();
-    let autostart = admin_on || autostart_get(&autostart_key()).is_some();
-
-    let methods = CreatePopupMenu();
-    for (id, m) in [
-        (CMD_TELEX, InputMethod::Telex),
-        (CMD_VNI, InputMethod::Vni),
-        (CMD_SIMPLE, InputMethod::SimpleTelex),
-        (CMD_SIMPLE2, InputMethod::SimpleTelex2),
-    ] {
-        add_item(methods, id, method_name(m), false);
-        if s.method == m {
-            CheckMenuRadioItem(methods, CMD_TELEX as u32, CMD_SIMPLE2 as u32, id as u32, MF_BYCOMMAND);
-        }
-    }
-
-    let fixes = CreatePopupMenu();
-    add_item(fixes, CMD_FIX_AUTO, "Tự động (trình duyệt, Excel)", false);
-    add_item(fixes, CMD_FIX_ALWAYS, "Luôn bật", false);
-    add_item(fixes, CMD_FIX_NEVER, "Tắt", false);
-    let fix_id = match s.suggestion_fix {
-        SuggestionFix::Auto => CMD_FIX_AUTO,
-        SuggestionFix::Always => CMD_FIX_ALWAYS,
-        SuggestionFix::Never => CMD_FIX_NEVER,
-    };
-    CheckMenuRadioItem(fixes, CMD_FIX_AUTO as u32, CMD_FIX_NEVER as u32, fix_id as u32, MF_BYCOMMAND);
+    let (Some(s), Some((viet, _))) = (snapshot(), shown_state()) else { return };
+    let has_settings = STATE.with_borrow(|st| st.as_ref().is_some_and(|st| st.config_path.is_some()));
 
     let menu = CreatePopupMenu();
-    add_item(menu, CMD_TOGGLE, "Tiếng Việt\tCtrl+Shift", s.viet);
+    let toggle = if s.hotkey == Hotkey::None { "Tiếng Việt".to_string() } else { format!("Tiếng Việt\t{}", s.hotkey.label()) };
+    add_item(menu, CMD_TOGGLE, &toggle, viet);
     AppendMenuW(menu, MF_SEPARATOR, 0, null());
-    AppendMenuW(menu, MF_POPUP, methods as usize, wide("Kiểu gõ").as_ptr());
-    add_item(menu, CMD_MODERN, "Bỏ dấu kiểu mới (oà, uý)", s.modern_style);
-    add_item(menu, CMD_SPELL, "Kiểm tra chính tả", s.spell_check);
-    add_item(menu, CMD_RESTORE, "Tự khôi phục từ không phải tiếng Việt", s.auto_restore);
-    AppendMenuW(menu, MF_POPUP, fixes as usize, wide("Sửa lỗi gợi ý tự động").as_ptr());
+    add_item(menu, CMD_TELEX, "Telex", false);
+    add_item(menu, CMD_VNI, "VNI", false);
+    // Simple Telex is a Telex option in the settings window.
+    let method_id = if s.method == InputMethod::Vni { CMD_VNI } else { CMD_TELEX };
+    CheckMenuRadioItem(menu, CMD_TELEX as u32, CMD_VNI as u32, method_id as u32, MF_BYCOMMAND);
     AppendMenuW(menu, MF_SEPARATOR, 0, null());
-    add_item(menu, CMD_AUTOSTART, "Khởi động cùng Windows", autostart);
-    if admin_on {
-        EnableMenuItem(menu, CMD_AUTOSTART as u32, MF_BYCOMMAND | MF_GRAYED);
+    add_item(menu, CMD_SETTINGS, "Cài đặt...", false);
+    if !has_settings {
+        EnableMenuItem(menu, CMD_SETTINGS as u32, MF_BYCOMMAND | MF_GRAYED);
     }
-    add_item(menu, CMD_ADMIN, "Chạy với quyền admin", admin_on);
-    AppendMenuW(menu, MF_SEPARATOR, 0, null());
-    add_item(menu, CMD_CHECK_UPDATE, "Kiểm tra cập nhật", false);
     add_item(menu, CMD_QUIT, "Thoát\tCtrl+Alt+Shift+Q", false);
 
     let window = WINDOW.get();
@@ -502,6 +542,8 @@ fn dispatch(msg: u32, wparam: WPARAM, lparam: LPARAM) -> Option<LRESULT> {
         WM_TRAY => {
             match lparam as u32 & 0xFFFF {
                 WM_LBUTTONUP => run_command(CMD_TOGGLE),
+                // The two clicks before it toggled twice, so the state is back where it was.
+                WM_LBUTTONDBLCLK => open_settings(),
                 WM_RBUTTONUP => unsafe { show_menu() },
                 _ => {}
             }
@@ -522,6 +564,11 @@ fn dispatch(msg: u32, wparam: WPARAM, lparam: LPARAM) -> Option<LRESULT> {
         WM_STATE_CHANGED => {
             refresh_icon();
             save_settings();
+            save_memory();
+            Some(0)
+        }
+        WM_RELOAD => {
+            reload_settings();
             Some(0)
         }
         m if m != 0 && m == TASKBAR_CREATED.get() => {
@@ -556,6 +603,8 @@ pub fn create(show_icon: bool) -> HWND {
         // When elevated, Windows would drop these messages because the shell runs with normal rights.
         ChangeWindowMessageFilterEx(window, TASKBAR_CREATED.get(), MSGFLT_ALLOW, null_mut());
         ChangeWindowMessageFilterEx(window, WM_TRAY, MSGFLT_ALLOW, null_mut());
+        // Only re-reads the settings file, which a normal process can write anyway.
+        ChangeWindowMessageFilterEx(window, WM_RELOAD, MSGFLT_ALLOW, null_mut());
         SHOW_ICON.set(show_icon);
         if show_icon {
             ICON_V.set(make_icon("V", COLOR_VIET));

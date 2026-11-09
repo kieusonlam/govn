@@ -16,7 +16,7 @@ use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::System::Threading::GetCurrentProcessId;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     GetKeyState, SendInput, SetFocus, VkKeyScanW, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP,
-    VK_BACK, VK_CAPITAL, VK_CONTROL, VK_LEFT, VK_SHIFT,
+    VK_BACK, VK_CAPITAL, VK_CONTROL, VK_LEFT, VK_MENU, VK_SHIFT,
 };
 use tray_ids::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
@@ -147,13 +147,29 @@ impl Ui {
         pump(25);
     }
 
-    /// `\u{8}` is backspace, `\u{1}` the left arrow, `\u{2}` Ctrl+Shift (toggle), `\u{3}` Caps Lock.
+    /// `\u{8}` is backspace, `\u{1}` the left arrow, `\u{2}` Ctrl+Shift (toggle), `\u{3}` Caps Lock,
+    /// `\u{4}` Alt+Z.
     fn type_keys(&self, keys: &str) {
         for ch in keys.chars() {
             match ch {
                 '\u{8}' => self.tap(VK_BACK),
                 '\u{1}' => self.tap(VK_LEFT),
                 '\u{3}' => self.tap(VK_CAPITAL),
+                '\u{5}' => {
+                    self.vk(VK_CONTROL, false);
+                    self.vk(VK_MENU, false);
+                    pump(25);
+                    self.vk(VK_MENU, true);
+                    self.vk(VK_CONTROL, true);
+                    pump(40);
+                }
+                '\u{4}' => {
+                    self.vk(VK_MENU, false);
+                    pump(25);
+                    self.tap(0x5A);
+                    self.vk(VK_MENU, true);
+                    pump(40);
+                }
                 '\u{2}' => {
                     self.vk(VK_CONTROL, false);
                     self.vk(VK_SHIFT, false);
@@ -204,6 +220,12 @@ fn start_with_config(exe: &str, cfg: &std::path::Path) -> Child {
 
 fn tray_window() -> HWND {
     unsafe { FindWindowW(wide(WINDOW_CLASS).as_ptr(), null()) }
+}
+
+/// What the settings window does after writing the file.
+fn reload() {
+    unsafe { PostMessageW(tray_window(), WM_RELOAD, 0, 0) };
+    pump(200);
 }
 
 fn command(cmd: usize) {
@@ -484,6 +506,23 @@ fn main() {
     let mut kb = start_with_config(&exe, &cfg);
     t.check(&ui, "mở lại vẫn nhớ VNI", "a1", "á");
     t.check(&ui, "mở lại vẫn nhớ kiểu mới", "hoa2", "hoà");
+
+    // Settings window: it rewrites the file, then posts WM_RELOAD. This test program is e2e.exe.
+    let write_cfg = |extra: &str| std::fs::write(&cfg, format!("method=telex\n{extra}")).unwrap();
+    write_cfg("english_apps=notepad.exe,e2e.exe\n");
+    reload();
+    t.check(&ui, "ứng dụng luôn gõ tiếng Anh", "as", "as");
+    t.check(&ui, "luôn tiếng Anh: phím tắt vẫn bật tạm được", "\u{2}as", "á");
+    write_cfg("hotkey=alt_z\n");
+    reload();
+    t.check(&ui, "bỏ khỏi danh sách: gõ tiếng Việt lại", "as", "á");
+    t.check(&ui, "phím tắt Alt+Z: tắt", "\u{4}as", "as");
+    t.check(&ui, "phím tắt Alt+Z: bật", "\u{4}as", "á");
+    t.check(&ui, "đổi sang Alt+Z thì Ctrl+Shift không chuyển nữa", "\u{2}as", "á");
+    write_cfg("hotkey=ctrl_alt\n");
+    reload();
+    t.check(&ui, "phím tắt Ctrl+Alt", "\u{5}as\u{5}", "as");
+    t.check(&ui, "Ctrl+Alt bật lại", "as", "á");
     command(CMD_QUIT);
     wait_exit(&mut kb);
     let _ = std::fs::remove_file(&cfg);

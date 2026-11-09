@@ -4,3 +4,8 @@ engine/ is a Rust port of ukengine from the UniKey project:
   Copyright (C) 2000-2005 Pham Kim Long <unikey@gmail.com>, http://unikey.org
   ukengine is licensed under the GNU Lesser General Public License, version 2 or later.
   Source used for the port: https://github.com/vn-input/ibus-unikey (directory ukengine/)
+
+The settings window uses Slint (https://slint.dev), licensed to govn under the GNU General Public
+License, version 3. Because Slint is GPL-3.0-only, govn.exe as built is distributed under GPL-3.0.
+Licences of all third-party crates in govn.exe: THIRD-PARTY-LICENSES.txt in the release zip,
+generated with tools/third_party.py.

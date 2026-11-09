@@ -7,6 +7,8 @@ license.workspace = true
 
 [dependencies]
 govn-engine = { path = "../engine" }
+# Only the settings window (a separate process) uses it; GPL-3.0 licence, compatible with govn.
+slint = { version = "1", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-software"] }
 
 [dependencies.windows-sys]
 version = "0.59"
@@ -14,6 +16,7 @@ features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
     "Win32_Networking_WinHttp",
+    "Win32_UI_Accessibility",
     "Win32_Security",
     "Win32_System_LibraryLoader",
     "Win32_System_Registry",
@@ -27,3 +30,4 @@ features = [
 
 [build-dependencies]
 embed-resource = "3"
+slint-build = "1"

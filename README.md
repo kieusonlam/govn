@@ -6,14 +6,14 @@ Bộ gõ tiếng Việt cho Windows viết bằng Rust. Engine được port t�
 
 govn chỉ xuất Unicode, nên không có và cũng không định thêm macro hay chuyển mã clipboard.
 
-Chưa có: cấu hình theo ứng dụng, cửa sổ cài đặt, trình cài đặt.
+Chưa có: trình cài đặt. Không định thêm gõ tắt.
 
 ## Vì sao viết bằng Rust
 
 - **An toàn hơn:** bộ gõ thấy mọi phím bạn gõ, kể cả mật khẩu. Rust tránh được lỗi bộ nhớ, loại lỗi hay gây crash và lỗ hổng bảo mật. Phần giao tiếp với Windows thì Rust chỉ bảo vệ được một phần.
 - **Gõ đúng như bản gốc:** đã so với phần xử lý tiếng Việt của UniKey trên khoảng 5,9 triệu phím thường (không dấu), kết quả giống hệt.
 - **Không crash ở những chỗ bản gốc crash:** khi thử, một số chuỗi phím làm bản C++ gốc crash, còn govn thì không.
-- **Gọn nhẹ:** chỉ một file `.exe` khoảng 350 KB, không cần cài thêm gì.
+- **Một file:** chỉ một file `.exe`, không cần cài thêm gì. Phần chạy nền chỉ dùng Win32; cửa sổ cài đặt dùng [Slint](https://slint.dev) và chạy thành tiến trình riêng khi bạn mở, nên phần đọc phím không mang theo nó.
 
 ## Chạy
 
@@ -22,16 +22,20 @@ Nếu đang dùng bộ gõ khác, chuyển nó sang chế độ E trước để
 Chạy `govn.exe`: không có cửa sổ, chỉ có icon ở khay hệ thống. Windows 11 có thể để icon trong khu ẩn `^`; kéo ra thanh tác vụ để luôn thấy.
 
 - Icon **V** đỏ: tiếng Việt. Icon **E** xám: English.
-- Nhấp trái icon hoặc nhấn Ctrl+Shift: bật/tắt.
-- Nhấp phải icon: kiểu gõ, bỏ dấu kiểu mới, kiểm tra chính tả, tự khôi phục, sửa lỗi gợi ý, khởi động cùng Windows, chạy với quyền admin, kiểm tra cập nhật, thoát.
+- Nhấp trái icon hoặc nhấn phím tắt (mặc định Ctrl+Shift): bật/tắt.
+- Nhấp phải icon: bật/tắt, Telex/VNI, Cài đặt, thoát. Nhấp đúp icon cũng mở Cài đặt.
+- Cửa sổ Cài đặt:
+  - **Gõ phím:** Telex/VNI, gõ `w` thành `ư` và `[ ]` thành `ơ ư` (tắt là Simple Telex), bỏ dấu kiểu mới, kiểm tra chính tả, tự trả về chữ gốc.
+  - **Ứng dụng:** danh sách ứng dụng luôn gõ tiếng Anh, chọn từ các cửa sổ đang mở; nhớ tiếng Việt/tiếng Anh theo từng ứng dụng.
+  - **Hệ thống:** phím tắt (Ctrl+Shift, Ctrl+Alt, Alt+Z hoặc không dùng), khởi động cùng Windows, chạy với quyền admin, kiểm tra cập nhật.
 - Ctrl+Alt+Shift+Q: thoát.
 
-Cài đặt lưu ở `%APPDATA%\govn\settings.ini`. "Khởi động cùng Windows" ghi giá trị `govn` vào `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, không cần quyền admin.
+Cài đặt lưu ở `%APPDATA%\govn\settings.ini`; trạng thái nhớ theo ứng dụng lưu ở `apps.ini` cùng thư mục. "Khởi động cùng Windows" ghi giá trị `govn` vào `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, không cần quyền admin.
 
 Tham số dòng lệnh ghi đè cài đặt đã lưu:
 
 ```
-govn [--method telex|vni|simple|simple2] [--modern] [--no-spell-check] [--auto-restore] [--off] [--suggestion-fix auto|always|never] [--config <file>]
+govn [--method telex|vni|simple|simple2] [--modern] [--no-spell-check] [--auto-restore] [--off] [--suggestion-fix auto|always|never] [--config <file>] [--settings]
 ```
 
 ### Ứng dụng chạy quyền admin
@@ -39,13 +43,13 @@ govn [--method telex|vni|simple|simple2] [--modern] [--no-spell-check] [--auto-r
 Windows không cho chương trình quyền thường nhận hay gửi phím cho cửa sổ quyền admin, nên ở đó govn quyền thường gõ ra chữ không dấu. Có hai cách:
 
 - Chuột phải `govn.exe` → Run as administrator, dùng cho một lần.
-- Menu → "Chạy với quyền admin": hỏi UAC một lần, tạo scheduled task `govn` chạy quyền cao nhất khi đăng nhập và thay cho mục khởi động cùng Windows. Mở `govn.exe` bằng tay lúc này cũng tự chuyển sang task.
+- Cài đặt → Hệ thống → "Chạy với quyền admin": hỏi UAC một lần, tạo scheduled task `govn` chạy quyền cao nhất khi đăng nhập và thay cho mục khởi động cùng Windows. Mở `govn.exe` bằng tay lúc này cũng tự chuyển sang task.
 
 Chỉ bật khi `govn.exe` nằm ở thư mục chỉ admin sửa được, như `C:\Program Files\govn\`. Nếu không, phần mềm khác có thể thay file này để lên quyền admin mà không qua UAC.
 
 ### Kiểm tra cập nhật
 
-Mục "Kiểm tra cập nhật" hỏi `api.github.com` phiên bản mới nhất. Đây là kết nối mạng duy nhất của govn và chỉ chạy khi bạn bấm. Yêu cầu không chứa gì bạn đã gõ; GitHub chỉ thấy địa chỉ IP và phiên bản govn. govn không tự tải hay tự cài: có bản mới thì nó hỏi rồi mở trang tải về, bạn tự thoát govn và chép đè file.
+Nút "Kiểm tra cập nhật" trong Cài đặt → Hệ thống hỏi `api.github.com` phiên bản mới nhất. Đây là kết nối mạng duy nhất của govn và chỉ chạy khi bạn bấm. Yêu cầu không chứa gì bạn đã gõ; GitHub chỉ thấy địa chỉ IP và phiên bản govn. govn không tự tải hay tự cài: có bản mới thì nó cho nút mở trang tải về, bạn tự thoát govn và chép đè file.
 
 ### Windows Defender
 
@@ -64,6 +68,8 @@ Trình duyệt và Excel hiện gợi ý dưới dạng chữ bôi đen sau con 
 cargo build --release
 ```
 
+Lần build đầu mất khoảng 10-15 phút vì phải biên dịch Slint; các lần sau nhanh hơn nhiều.
+
 Nếu thư mục dự án nằm ở đường dẫn quá dài, linker báo `LNK1104`: đặt `CARGO_TARGET_DIR` sang một đường dẫn ngắn.
 
 ## Test
@@ -71,7 +77,7 @@ Nếu thư mục dự án nằm ở đường dẫn quá dài, linker báo `LNK1
 - `cargo test --workspace`: từ tiếng Việt thật, chuỗi phím ngẫu nhiên không được làm engine panic, đọc/ghi file cài đặt.
 - `tools/difftest.py`: so Rust với bản C++ gốc trên cùng chuỗi phím. Lấy `ukengine/` từ `ibus-unikey`, build oracle bằng `tools/oracle/build.bat` (đường dẫn trong file giả định `ibus-unikey/` nằm ngang hàng thư mục `tools` gốc), rồi:
   `ASCII_ONLY=1 python tools/difftest.py <oracle.exe> <trace.exe> 30000 1`
-- `cargo test -p govn real_github -- --ignored`: gọi GitHub thật. `tools/test_update.py <govn.exe> <chữ cần thấy>`: bấm mục kiểm tra cập nhật và đọc hộp thoại kết quả.
+- `cargo test -p govn real_github -- --ignored`: gọi GitHub thật. `tools/test_update.py <govn.exe> <chữ cần thấy>`: bấm lệnh kiểm tra cập nhật của khay và đọc hộp thoại kết quả.
 - `cargo run --release -p govn --example e2e -- <govn.exe>`: gõ phím thật vào cửa sổ test riêng. Nó chỉ gõ khi cửa sổ test đang ở foreground. Phần khay kiểm tra từng lệnh menu bằng tác dụng thật khi gõ, dùng file cài đặt và khóa registry tạm.
 - `tools/test_chrome.py`: thử trên Chrome thật (hồ sơ tạm, trang local): thanh địa chỉ có gợi ý, `textarea`, `input`, `contenteditable`.
 - `tools/test_vscode.py`: thử trên VS Code thật (hồ sơ tạm, không extension), có đối chứng popup gợi ý.

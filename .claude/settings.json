@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(cargo build:*)",
+      "Bash(cargo test:*)",
+      "Bash(cargo check:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(cargo fmt:*)",
+      "Bash(cargo tree:*)",
+      "Bash(cargo metadata:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(gh release view:*)",
+      "Bash(gh release list:*)",
+      "Bash(python tools/third_party.py:*)"
+    ],
+    "ask": [
+      "Bash(cargo run:*)",
+      "Bash(git push:*)",
+      "Bash(git tag:*)",
+      "Bash(gh release create:*)",
+      "Bash(gh release edit:*)",
+      "Bash(gh release delete:*)",
+      "Bash(schtasks:*)",
+      "Bash(reg add:*)",
+      "Bash(reg delete:*)"
+    ],
+    "deny": [
+      "Bash(Add-MpPreference:*)",
+      "Bash(Set-MpPreference:*)",
+      "PowerShell(Add-MpPreference:*)",
+      "PowerShell(Set-MpPreference:*)"
+    ]
+  }
+}

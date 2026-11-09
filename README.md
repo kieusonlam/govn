@@ -2,7 +2,7 @@
 
 Bộ gõ tiếng Việt cho Windows viết bằng Rust. Engine được port từ `ukengine` của UniKey (xem `NOTICE`).
 
-![Icon V và E ở khay hệ thống, cùng menu nhấp phải của govn](docs/screenshot.png)
+![Cửa sổ Cài đặt của govn, tab Gõ phím: chọn Telex hoặc VNI và các tùy chọn bỏ dấu](docs/settings-go-phim.png)
 
 govn chỉ xuất Unicode, nên không có và cũng không định thêm macro hay chuyển mã clipboard.
 
@@ -28,6 +28,10 @@ Chạy `govn.exe`: không có cửa sổ, chỉ có icon ở khay hệ thống. 
   - **Gõ phím:** Telex/VNI, gõ `w` thành `ư` và `[ ]` thành `ơ ư` (tắt là Simple Telex), bỏ dấu kiểu mới, kiểm tra chính tả, tự trả về chữ gốc.
   - **Ứng dụng:** danh sách ứng dụng luôn gõ tiếng Anh, chọn từ các cửa sổ đang mở; nhớ tiếng Việt/tiếng Anh theo từng ứng dụng.
   - **Hệ thống:** phím tắt (Ctrl+Shift, Ctrl+Alt, Alt+Z hoặc không dùng), khởi động cùng Windows, chạy với quyền admin, kiểm tra cập nhật.
+
+  <img src="docs/settings-ung-dung.png" width="49%" alt="Tab Ứng dụng: danh sách ứng dụng luôn gõ tiếng Anh và tùy chọn nhớ theo từng ứng dụng">
+  <img src="docs/settings-he-thong.png" width="49%" alt="Tab Hệ thống: phím tắt, khởi động cùng Windows, quyền admin, kiểm tra cập nhật">
+
 - Ctrl+Alt+Shift+Q: thoát.
 
 Cài đặt lưu ở `%APPDATA%\govn\settings.ini`; trạng thái nhớ theo ứng dụng lưu ở `apps.ini` cùng thư mục. "Khởi động cùng Windows" ghi giá trị `govn` vào `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, không cần quyền admin.

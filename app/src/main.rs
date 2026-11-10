@@ -631,6 +631,11 @@ fn main() {
             WINEVENT_OUTOFCONTEXT,
         );
 
+        // After the hooks: the question below waits for the user, and typing must work meanwhile.
+        if show_icon && !testing {
+            tray::check_task_path();
+        }
+
         let timer = args.duration_secs.map(|secs| SetTimer(null_mut(), 0, secs.saturating_mul(1000), None));
 
         let mut msg: MSG = std::mem::zeroed();

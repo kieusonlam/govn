@@ -48,6 +48,7 @@ Windows không cho chương trình quyền thường nhận hay gửi phím cho 
 
 - Chuột phải `govn.exe` → Run as administrator, dùng cho một lần.
 - Cài đặt → Hệ thống → "Chạy với quyền admin": hỏi UAC một lần, tạo scheduled task `govn` chạy quyền cao nhất khi đăng nhập và thay cho mục khởi động cùng Windows. Mở `govn.exe` bằng tay lúc này cũng tự chuyển sang task.
+- Task ghi đường dẫn của `govn.exe`. Nếu bạn chuyển govn sang thư mục khác hoặc giải nén bản mới ra chỗ khác, lần mở sau govn hỏi có chuyển task sang file mới không (qua UAC). Đang chạy quyền admin thì govn tự chuyển.
 
 Chỉ bật khi `govn.exe` nằm ở thư mục chỉ admin sửa được, như `C:\Program Files\govn\`. Nếu không, phần mềm khác có thể thay file này để lên quyền admin mà không qua UAC.
 

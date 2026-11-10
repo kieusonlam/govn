@@ -24,14 +24,15 @@ pub const RESULT_CANCELLED: u32 = ERROR_CANCELLED;
 
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-fn schtasks(args: &[&str]) -> Option<Output> {
-    // By full path: an elevated process must not pick up a schtasks.exe from PATH.
+fn system_dir() -> Option<PathBuf> {
     let mut buf = [0u16; 260];
     let n = unsafe { GetSystemDirectoryW(buf.as_mut_ptr(), buf.len() as u32) } as usize;
-    if n == 0 || n >= buf.len() {
-        return None;
-    }
-    let exe = PathBuf::from(std::ffi::OsString::from_wide(&buf[..n])).join("schtasks.exe");
+    (n > 0 && n < buf.len()).then(|| PathBuf::from(std::ffi::OsString::from_wide(&buf[..n])))
+}
+
+fn schtasks(args: &[&str]) -> Option<Output> {
+    // By full path: an elevated process must not pick up a schtasks.exe from PATH.
+    let exe = system_dir()?.join("schtasks.exe");
     Command::new(exe)
         .args(args)
         .creation_flags(CREATE_NO_WINDOW)
@@ -56,13 +57,55 @@ pub fn run_task(name: &str) -> bool {
 
 /// The task starts this very file, not a copy that was moved or deleted since.
 pub fn task_points_here(name: &str) -> bool {
-    let Some(exe) = exe_path() else { return false };
-    schtasks(&["/query", "/tn", name, "/xml"]).is_some_and(|o| {
-        o.status.success() && String::from_utf8_lossy(&o.stdout).to_lowercase().contains(&xml_escape(&exe).to_lowercase())
-    })
+    match (task_command(name), exe_path()) {
+        (Some(command), Some(exe)) => same_path(&command, &exe),
+        _ => false,
+    }
 }
 
-fn exe_path() -> Option<String> {
+/// The program a task starts, or None if there is no such task.
+///
+/// Read from the task's definition file, which is UTF-16 and readable by the user who made it.
+/// `schtasks /xml` is the fallback: its output goes through the console code page, which can lose
+/// Vietnamese letters in a folder name.
+pub fn task_command(name: &str) -> Option<String> {
+    let from_file = system_dir()
+        .and_then(|d| std::fs::read(d.join("Tasks").join(name)).ok())
+        .and_then(|bytes| decode_utf16(&bytes));
+    let xml = match from_file {
+        Some(xml) => xml,
+        None => {
+            let o = schtasks(&["/query", "/tn", name, "/xml"])?;
+            if !o.status.success() {
+                return None;
+            }
+            String::from_utf8_lossy(&o.stdout).into_owned()
+        }
+    };
+    command_in_xml(&xml)
+}
+
+fn decode_utf16(bytes: &[u8]) -> Option<String> {
+    let body = bytes.strip_prefix(&[0xFF, 0xFE])?;
+    let units: Vec<u16> = body.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+    String::from_utf16(&units).ok()
+}
+
+fn command_in_xml(xml: &str) -> Option<String> {
+    let start = xml.find("<Command>")? + "<Command>".len();
+    let end = start + xml[start..].find("</Command>")?;
+    let raw = xml[start..end].trim();
+    let text = raw.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&apos;", "'").replace("&amp;", "&");
+    Some(text.trim_matches('"').to_string())
+}
+
+/// Windows paths ignore case, and either slash works.
+pub fn same_path(a: &str, b: &str) -> bool {
+    let norm = |p: &str| p.trim().replace('/', "\\").to_lowercase();
+    norm(a) == norm(b)
+}
+
+pub fn exe_path() -> Option<String> {
     std::env::current_exe().ok().map(|p| p.display().to_string())
 }
 
@@ -204,6 +247,32 @@ mod tests {
             assert!(x.contains(needed), "{needed}");
         }
         assert!(!x.contains("<Arguments>"));
+    }
+
+    #[test]
+    fn reads_the_command_back() {
+        let x = task_xml(r"D:\Thư mục R&D\govn.exe", "--x", r"PC\An");
+        assert_eq!(command_in_xml(&x).as_deref(), Some(r"D:\Thư mục R&D\govn.exe"));
+        let mut bytes = vec![0xFF, 0xFE];
+        bytes.extend(x.encode_utf16().flat_map(u16::to_le_bytes));
+        assert_eq!(decode_utf16(&bytes).and_then(|t| command_in_xml(&t)).as_deref(), Some(r"D:\Thư mục R&D\govn.exe"));
+        assert_eq!(command_in_xml("<Command>\"C:\\a b\\govn.exe\"</Command>").as_deref(), Some(r"C:\a b\govn.exe"));
+        assert_eq!(command_in_xml("<Task/>"), None);
+        assert!(same_path(r"D:\GOVN\govn.exe", "d:/govn/GOVN.EXE"));
+        assert!(!same_path(r"D:\govn-0.1.0-windows-x64\govn.exe", r"D:\govn\govn.exe"));
+    }
+
+    /// Creates and deletes a task of its own (normal rights, no UAC), whose folder has Vietnamese letters.
+    #[test]
+    #[ignore = "creates a scheduled task"]
+    fn reads_a_real_task() {
+        let name = format!("govn-test-{}", std::process::id());
+        let exe = r"C:\Thư mục thử\govn.exe";
+        assert!(succeeded(&["/create", "/tn", &name, "/tr", &format!("\"{exe}\""), "/sc", "once", "/st", "23:59", "/f"]));
+        let got = task_command(&name);
+        succeeded(&["/delete", "/tn", &name, "/f"]);
+        assert_eq!(got.as_deref(), Some(exe));
+        assert_eq!(task_command(&name), None);
     }
 
     #[test]

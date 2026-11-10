@@ -314,6 +314,46 @@ fn toggle_admin() {
     });
 }
 
+/// Admin mode starts govn through a task that names the file. After govn is moved or a new version is
+/// unpacked elsewhere, the task still starts the old file, or nothing at all: point it here.
+pub fn check_task_path() {
+    let Some((name, args, elevated)) =
+        STATE.with_borrow(|s| s.as_ref().map(|st| (st.task_name.clone(), st.task_args.clone(), st.elevated)))
+    else {
+        return;
+    };
+    let (Some(old), Some(exe)) = (admin::task_command(&name), admin::exe_path()) else { return };
+    if admin::same_path(&old, &exe) {
+        return;
+    }
+    if elevated {
+        // Already running with admin rights, which is what the task would give: no need to ask.
+        if admin::set_task(&name, true, &args) {
+            show_warning("Chế độ quyền admin giờ chạy file govn này mỗi lần đăng nhập.");
+        }
+        return;
+    }
+    let effect = if std::path::Path::new(&old).exists() {
+        "Mỗi lần đăng nhập, Windows sẽ chạy file đó chứ không phải file này."
+    } else {
+        "File đó không còn nữa, nên govn không tự khởi động cùng Windows."
+    };
+    let text = format!(
+        "Chế độ quyền admin đang chạy file govn khác:\n{old}\n\n{effect}\n\nChuyển sang file đang chạy?\n{exe}\n\n\
+         Windows sẽ hỏi quyền admin (UAC). Nên để govn.exe trong thư mục chỉ admin sửa được, như Program Files."
+    );
+    let answer = unsafe { MessageBoxW(WINDOW.get(), wide(&text).as_ptr(), wide("govn").as_ptr(), MB_YESNO | MB_ICONWARNING) };
+    if answer != IDYES {
+        return;
+    }
+    // As when turning admin mode on: the elevated copy rewrites the task, then this one restarts through it.
+    let window = WINDOW.get() as usize;
+    std::thread::spawn(move || {
+        let result = admin::set_task_elevated(&name, true, &args);
+        unsafe { PostMessageW(window as HWND, WM_ADMIN_DONE, result as WPARAM, LPARAM::from(true)) };
+    });
+}
+
 fn admin_changed(result: u32, on: bool) {
     match result {
         admin::RESULT_OK => {}

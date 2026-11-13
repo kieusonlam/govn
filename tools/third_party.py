@@ -50,13 +50,12 @@ def main(out: str) -> None:
             parts.append(f"{'=' * 78}\n{head}\n{f.name}\n{'=' * 78}\n\n{text}\n")
 
     intro = (
-        "govn.exe includes the following third-party crates. Their licence files follow.\n"
-        "Slint is used under the GNU General Public License version 3 (see LICENSE).\n\n"
+        "govn.exe includes the following third-party crates. Their licence files follow.\n\n"
     )
     tail = ""
     if missing:
         tail = (f"{'=' * 78}\nCrates without a licence file in their package. Licence texts by identifier:\n"
-                "https://spdx.org/licenses/ (Slint: the GPL-3.0 text in LICENSE)\n\n" + "\n".join(missing) + "\n")
+                "https://spdx.org/licenses/\n\n" + "\n".join(missing) + "\n")
     Path(out).write_text(intro + "\n".join(parts) + tail, encoding="utf-8", newline="\n")
     print(f"{len(seen - workspace)} crates, {len(parts)} files, {len(missing)} without a file -> {out}")
 

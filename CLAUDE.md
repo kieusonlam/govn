@@ -7,14 +7,14 @@ Bộ gõ tiếng Việt cho Windows bằng Rust. Engine port từ `ukengine` c�
 - `engine/` (`govn-engine`): engine gõ, không phụ thuộc Windows. `engine/src/tables.rs` sinh bằng `tools/gen_tables.py`, không sửa tay.
 - `app/` (`govn`): file exe.
   - `main.rs`: hook bàn phím `WH_KEYBOARD_LL`, gõ lại bằng `SendInput`, theo dõi cửa sổ foreground (`SetWinEventHook`), phím tắt.
-  - `tray.rs`: icon và menu khay. `settings.rs` + `ui/settings.slint`: cửa sổ Cài đặt.
+  - `tray.rs`: icon và menu khay. `settings.rs`: cửa sổ Cài đặt, Win32 thuần (tab control, mỗi tab là một cửa sổ con nền trắng chứa control; vị trí tính theo đơn vị 96 DPI rồi nhân theo DPI màn hình).
   - `config.rs`: `settings.ini` và `apps.ini`. `admin.rs`: Task Scheduler cho chế độ admin. `update.rs`: hỏi GitHub bản mới.
 - `tools/`: script test thật (Chrome, VS Code, Excel, admin), so sánh với bản C++ (`difftest.py`, `oracle/`), `third_party.py`.
 - `dist/`: zip các bản đã phát hành (không commit).
 
 ## Hai tiến trình
 
-Cửa sổ Cài đặt là tiến trình riêng: `govn.exe --settings --config <ini> --task-name <t> --autostart-key <k>`. Phần gõ phím không nạp Slint, đừng gọi Slint từ code chạy trong hook.
+Cửa sổ Cài đặt là tiến trình riêng: `govn.exe --settings --config <ini> --task-name <t> --autostart-key <k>`. Đừng mở cửa sổ hay hộp thoại từ code chạy trong hook.
 
 - Cả hai đều ghi `settings.ini`, nên mọi thay đổi là đọc-sửa-ghi (`config::Settings::load` → sửa → `save`, ghi qua file tạm).
 - Ghi xong, cửa sổ Cài đặt gửi `WM_RELOAD` tới cửa sổ ẩn `WINDOW_CLASS` của tiến trình gõ phím. `ChangeWindowMessageFilterEx` cho phép tin này đi qua khi tiến trình gõ phím chạy quyền admin.
@@ -33,9 +33,9 @@ Cửa sổ Cài đặt là tiến trình riêng: `govn.exe --settings --config <
 
 ## Build
 
-- Build release lần đầu mất 10-15 phút (Slint). `cargo build --release -p govn`.
+- `cargo build --release -p govn`. Không dùng thư viện giao diện (đã bỏ Slint để file từ 9,7 MB còn khoảng 0,5 MB); giữ như vậy, đừng thêm framework UI.
 - Windows Defender đã nhiều lần chặn bản build nằm trong `%TEMP%` (`Trojan:Win32/Bearfoos.A!ml`, `Behavior:Win32/Execution.A!ml`) vì app đọc và gõ lại phím. Nếu build hoặc chạy bị chặn thì báo cho người dùng. **Không thêm exclusion cho Defender và không tìm cách né phát hiện.**
-- Icon app ("Gõ" trắng trên nền đỏ) vẽ bằng `pwsh -NoProfile -File tools/make_icon.ps1`, ra `app/govn.ico`, `app/ui/icon.png`, `docs/icon.png`. Không sửa tay các file đó. Icon V/E ở khay vẽ lúc chạy trong `tray.rs`.
+- Icon app ("Gõ" trắng trên nền đỏ) vẽ bằng `pwsh -NoProfile -File tools/make_icon.ps1`, ra `app/govn.ico` (resource 1, cũng là icon cửa sổ Cài đặt) và `docs/icon.png`. Không sửa tay các file đó. Icon V/E ở khay vẽ lúc chạy trong `tray.rs`.
 - Phiên bản nằm ở 3 chỗ, phải đổi cùng nhau: `Cargo.toml` (`[workspace.package] version`), `app/govn.rc` (`FILEVERSION`, `PRODUCTVERSION`, hai chuỗi `"x.y.z"`), `app/govn.manifest`.
 
 ## Test
@@ -59,4 +59,4 @@ Cửa sổ Cài đặt là tiến trình riêng: `govn.exe --settings --config <
 - Script mới viết bằng Python (`sys.stdout.reconfigure(encoding="utf-8")` nếu in tiếng Việt) hoặc PowerShell 7 (`pwsh`).
 - Nhiều file dùng CRLF. Khi sửa bằng script, giữ nguyên kiểu xuống dòng của file.
 - Phát hành: dùng skill `/release` (`.claude/skills/release/SKILL.md`).
-- Giấy phép: mã govn GPL-3.0-or-later; vì Slint chỉ cho dùng theo GPL-3.0 nên `govn.exe` phát hành theo GPL-3.0. Không thêm thư viện có giấy phép không tương thích GPL-3.0.
+- Giấy phép: GPL-3.0-or-later. Không thêm thư viện có giấy phép không tương thích.

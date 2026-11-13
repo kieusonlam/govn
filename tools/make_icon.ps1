@@ -1,6 +1,6 @@
 ﻿#Requires -Version 7
 # Draws the app icon: a red rounded square (the tray "V" colour) with "Gõ" in white Segoe UI Bold.
-# Writes app/govn.ico (embedded in govn.exe) and app/ui/icon.png (the settings window).
+# Writes app/govn.ico (embedded in govn.exe, also the settings window icon) and docs/icon.png.
 # Usage: pwsh -NoProfile -File tools/make_icon.ps1
 Add-Type -AssemblyName System.Drawing
 $root = Split-Path -Parent $PSScriptRoot
@@ -70,6 +70,5 @@ for ($i = 0; $i -lt $sizes.Count; $i++) {
 foreach ($img in $images) { $bw.Write($img) }
 $bw.Flush()
 [IO.File]::WriteAllBytes((Join-Path $root 'app/govn.ico'), $out.ToArray())
-(Draw-Icon 64).Save((Join-Path $root 'app/ui/icon.png'), [System.Drawing.Imaging.ImageFormat]::Png)
 (Draw-Icon 256).Save((Join-Path $root 'docs/icon.png'), [System.Drawing.Imaging.ImageFormat]::Png)
-"wrote app/govn.ico ($($sizes -join ', ') px), app/ui/icon.png, docs/icon.png"
+"wrote app/govn.ico ($($sizes -join ', ') px), docs/icon.png"
